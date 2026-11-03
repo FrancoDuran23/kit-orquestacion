@@ -13,13 +13,33 @@ Skills, hooks y MCP para trabajar con varios agentes de IA a la vez sin perder e
 
 El detalle técnico está en [`skills/orquestar-slices/SKILL.md`](skills/orquestar-slices/SKILL.md).
 
+## Orca + slices: lo mejor de cada uno
+
+| Lo pone Orca | Lo pone slices |
+|---|---|
+| Workers supervisados, con interfaz | El SPEC como contrato |
+| `ask` / `reply`: el worker pregunta en medio del trabajo | Re-correr los tests por fuera (no le cree al worker) |
+| Heartbeats: sabe si un worker se colgó | El juez Jev: ¿los tests cubren lo que pedía el SPEC? |
+| Gates para lo irreversible | Reintento con el motivo del rechazo |
+| Rotación de cuentas (`orca account add`) | Merge solo con recibo verde |
+
+```text
+./slices lanzar X      → worktree + worker de Orca
+worker_done            → ./slices verificar X   (checks + Jev)
+  CIERRA               → ./slices mergear X
+  NO CIERRA            → ./slices lanzar X      (el worker recibe el motivo y arregla eso)
+```
+
+**Para arrancar en un repo nuevo:** pedile al agente *"iniciar orquestación"*. Te pregunta qué suscripciones tenés, te recomienda quién planifica, quién ejecuta y quién juzga, y te guía hasta dejar Orca configurado y un slice de prueba andando.
+
 ## Qué trae
 
 ### Skills propias (en este repo)
 
 | Skill | Para qué |
 |---|---|
-| `orquestar-slices` | El método: roles, DAG, SPEC, recibos, juez, merge con gate. Con `./slices` o con `orca orchestration`. |
+| `iniciar-orquestacion` | Entrevista: qué suscripciones tenés y para qué; recomienda el plan y guía la configuración de Orca paso a paso. |
+| `orquestar-slices` | El método: roles, DAG, SPEC, Orca supervisa, slices verifica, Jev juzga, merge con recibo. |
 | `code-review-en-loop` | `/code-review` → arreglar → repetir hasta limpio. |
 | `qa-con-video` | Videos con Playwright en el issue (para QA) y en el MR/PR (para el revisor). |
 
@@ -50,7 +70,8 @@ La lista vive en [`fuentes.txt`](fuentes.txt): agregar o sacar una fuente es una
 
 ### Orquestador
 
-- [`bin/slices`](bin/slices): un solo script bash. Un worktree y una rama por slice, ejecución desacoplada, verificación con recibo, merge solo con recibo verde.
+- [`bin/slices`](bin/slices): un solo script bash. Un worktree y una rama por slice, worker de Orca (o un proceso local desacoplado), verificación con recibo, reintento con el motivo y merge solo con recibo verde.
+- [`bin/juez-jev`](bin/juez-jev): el juez. Una pregunta a Jev (TypeSafe System One) por cada test exigido del SPEC, más otra sobre si los tests son de relleno. Si Jev no responde, no cierra. La key va en `JEV_API_KEY` o en `~/.config/kit-orquestacion/jev.key`.
 
 ## Instalar
 

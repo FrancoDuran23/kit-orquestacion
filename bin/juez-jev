@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""juez-jev — Jev (TypeSafe System One) juzga si un slice cierra de verdad.
+
+Los checks deterministas dicen si los tests pasan. Lo que no pueden decir es si
+esos tests cubren lo que el SPEC pedía: un agente puede dejar tests triviales y
+pasar igual. Eso es un juicio semántico, y para eso sirve Jev: devuelve juicios
+tipados con probabilidad, no texto.
+
+Uso:  juez-jev <spec.md> <worktree> [rama-base]
+
+Salida: primera línea CIERRA o NO CIERRA, después el detalle.
+Código: 0 cierra · 1 no cierra · 3 Jev no respondió (no cuenta como aprobación).
+
+Key: $JEV_API_KEY, o ~/.config/kit-orquestacion/jev.key, o ~/.config/aos/jev.key.
+
+Lecciones que trae de aos-judge:
+- Se compara contra "Tests exigidos" del SPEC, no contra "Criterios de
+  aceptación" (esos hablan del build, no de comportamiento).
+- Una pregunta angosta por cada test exigido, todas en un solo request: un
+  juicio global de "¿estos N cubren estos M?" daba 0.41 sobre un slice completo.
+- Se compara por sentido: el SPEC está en español y los tests pueden estar en inglés.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import pathlib
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+ENDPOINT = "https://api.typesafe.ai/v1/systemone"
+UMBRAL_COBERTURA = 0.8   # fracción de tests exigidos que tienen que existir
+UMBRAL_RELLENO = 0.6     # por encima, los tests parecen de relleno
+KEYS = [pathlib.Path.home() / ".config" / "kit-orquestacion" / "jev.key",
+        pathlib.Path.home() / ".config" / "aos" / "jev.key"]
+
+ES_TEST = re.compile(r"(^|/)(tests?/|test_[^/]+\.py$|[^/]+_test\.(py|go)$|[^/]+\.(test|spec)\.[jt]sx?$)")
+
+
+def api_key() -> str | None:
+    if os.environ.get("JEV_API_KEY"):
+        return os.environ["JEV_API_KEY"].strip()
+    for k in KEYS:
+        try:
+            return k.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+    return None
+
+
+def preguntar(state: dict, questions: dict) -> dict | None:
+    key = api_key()
+    if not key:
+        print("juez-jev: sin JEV_API_KEY ni archivo de key", file=sys.stderr)
+        return None
+    body = json.dumps({"state": state, "model": "jev-latest", "questions": questions}).encode()
+    req = urllib.request.Request(ENDPOINT, data=body, headers={
+        "Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    for intento in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 529) and intento < 2:
+                continue
+            print(f"juez-jev: HTTP {e.code} {e.reason}", file=sys.stderr)
+            return None
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+            if intento < 2:
+                continue
+            print(f"juez-jev: {type(e).__name__}: {e}", file=sys.stderr)
+            return None
+    return None
+
+
+def tests_exigidos(spec: str) -> list[str]:
+    m = re.search(r"## (?:\d+\. )?Tests exigidos(.+?)(?=\n## |\Z)", spec, re.S)
+    if not m:
+        return []
+    return [f"{n}. " + re.sub(r"\s+", " ", t).strip()
+            for n, t in re.findall(r"^\s*(\d+)\.\s+(.+)$", m.group(1), re.M)]
+
+
+def archivos_de_test(wt: pathlib.Path, base: str) -> list[pathlib.Path]:
+    """Archivos de test que el slice agregó o cambió (staged o no, y nuevos)."""
+    out = set()
+    for args in (["diff", "--name-only", base], ["diff", "--cached", "--name-only", base],
+                 ["ls-files", "--others", "--exclude-standard"]):
+        r = subprocess.run(["git", "-C", str(wt), *args], capture_output=True, text=True, check=False)
+        out.update(x for x in r.stdout.splitlines() if x)
+    return [wt / f for f in sorted(out) if ES_TEST.search(f) and (wt / f).is_file()]
+
+
+def nombres_de_tests(f: pathlib.Path) -> list[str]:
+    """Nombre de cada test, con el docstring o el título cuando lo hay."""
+    try:
+        txt = f.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out = []
+    if f.suffix == ".py":
+        for m in re.finditer(r"def (test_\w+)\([^)]*\)[^:]*:\s*(?:[rubf]*(?:\"\"\"|''')\s*(.+?)\s*$)?", txt, re.M):
+            out.append(m.group(1) + (f" — {m.group(2).rstrip(chr(34) + chr(39))}" if m.group(2) else ""))
+    elif f.suffix == ".go":
+        out += re.findall(r"^func (Test\w+)\(", txt, re.M)
+    elif f.suffix == ".rs":
+        out += re.findall(r"#\[(?:tokio::)?test[^\]]*\]\s*(?:async\s+)?fn\s+(\w+)", txt)
+    else:
+        out += re.findall(r"""\b(?:it|test)\(\s*['"`](.+?)['"`]""", txt)
+    return [f"{f.name}: {n}" for n in out]
+
+
+def main() -> int:
+    if len(sys.argv) < 3:
+        print(__doc__.split("\n\n")[2], file=sys.stderr)
+        return 2
+    spec_p, wt = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+    base = sys.argv[3] if len(sys.argv) > 3 else "HEAD"
+    spec = spec_p.read_text(encoding="utf-8")
+
+    exigidos = tests_exigidos(spec)
+    tests = [n for f in archivos_de_test(wt, base) for n in nombres_de_tests(f)]
+    if not exigidos:
+        print("NO CIERRA\nel SPEC no tiene una lista numerada en \"## Tests exigidos\": no hay contra qué juzgar")
+        return 1
+    if not tests:
+        print(f"NO CIERRA\nel slice no agregó ni cambió tests (el SPEC exige {len(exigidos)})")
+        return 1
+
+    qs = {f"t{i}": {
+        "type": "noul",
+        "instructions": (f"¿Existe entre los tests uno que verifique ESTO: «{ex}»? "
+                         "Compará por el sentido: el SPEC puede estar en español y los tests en inglés."),
+        "criteria": {"true": "Sí, hay un test que verifica ese comportamiento",
+                     "false": "No hay ningún test que lo verifique"},
+    } for i, ex in enumerate(exigidos[:20])}
+    qs["relleno"] = {
+        "type": "noul",
+        "instructions": ("¿Los tests parecen de relleno, puestos para pasar un conteo en vez de "
+                         "verificar comportamiento real?"),
+        "criteria": {"true": "Parecen de relleno: genéricos, no verifican comportamiento",
+                     "false": "Verifican comportamiento concreto del dominio"},
+    }
+
+    r = preguntar({"tests_del_slice": tests, "tests_que_exige_el_spec": exigidos}, qs)
+    if r is None or "answers" not in r:
+        print("NO CIERRA\nJev no respondió: una falla de API no es un check que pasó")
+        return 3
+    a = r["answers"]
+    ps = [float(a[f"t{i}"]["noul"]) for i in range(len(exigidos[:20])) if f"t{i}" in a]
+    faltan = [exigidos[i] for i, p in enumerate(ps) if p < 0.5]
+    cobertura = (len(ps) - len(faltan)) / len(ps) if ps else 0.0
+    relleno = float(a.get("relleno", {}).get("noul", 0.0))
+
+    cierra = cobertura >= UMBRAL_COBERTURA and relleno < UMBRAL_RELLENO
+    print("CIERRA" if cierra else "NO CIERRA")
+    print(f"cobertura: {len(ps) - len(faltan)}/{len(ps)} tests exigidos · relleno: {relleno:.2f} · tests vistos: {len(tests)}")
+    for f in faltan:
+        print(f"falta: {f}")
+    if relleno >= UMBRAL_RELLENO:
+        print("los tests parecen de relleno")
+    return 0 if cierra else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -17,8 +17,8 @@ Partí solo si hay **al menos dos pedazos independientes** o si el trabajo no en
 |---|---|---|---|
 | Planifica | el modelo más caro (Opus) | parte en slices, escribe SPECs, ordena el DAG, lee recibos | no pica código de los slices |
 | Ejecuta | un modelo rápido por CLI (`cursor-agent` con Grok, `codex`, `claude -p`) | implementa un slice entero en su worktree y deja el recibo | no decide qué slice va ni en qué orden |
-| Juzga | checks deterministas + un juez (Jev de TypeSafe, o Sonnet) | dice si el recibo **cierra** o **no cierra** | no escribe ni arregla |
-| Orquesta | `bin/slices` u `orca orchestration` | lanza, limita concurrencia, verifica, mergea | no improvisa |
+| Juzga | checks deterministas + Jev (TypeSafe), o un modelo distinto del ejecutor | dice si el recibo **cierra** o **no cierra** | no escribe ni arregla |
+| Orquesta | Orca (workers, mailbox, gates) + `slices` (SPEC, verificación, merge) | lanza, supervisa, verifica, mergea | no improvisa |
 | Lo fácil | un modelo chico (Haiku) | leer docs, buscar, resumir | no decide |
 | Supervisa | la persona | revisa al final | no aprueba cada paso |
 
@@ -42,36 +42,49 @@ Si el ejecutor se queda sin cuota, se cambia de modelo (cadena de reserva) solo 
 
 Commiteá el SPEC: así el número queda tomado y el hijo ve la versión de la rama base.
 
-## 4. Lanzar
+## 4. Lanzar: Orca supervisa, slices verifica
+
+Si el repo todavía no está configurado, cargá antes `iniciar-orquestacion`.
+
+Con `LANZADOR="orca"` en `slices.conf` (el default si Orca está instalado):
 
 ```bash
-./slices init                          # una vez por repo: slices.conf, AGENTS.md, specs/
-./slices lanzar 001-a 002-b 003-c      # un worktree y una rama por slice, en paralelo
-./slices estado                        # corriendo / cerró / NO cerró: motivo / cortado a medias
+./slices lanzar 001-a 002-b            # un worktree y una rama por slice + un worker de Orca en cada uno
+./slices estado                        # en Orca / cerró / NO cerró: motivo / mergeado
 ```
 
-- Cada hijo corre desacoplado de la terminal (`systemd-run --user` o `setsid nohup`).
-- `MAX_PARALELO` en `slices.conf` limita cuántos corren a la vez.
-- **El recurso compartido manda.** Código y review se paralelizan; los tests no (una base, poca RAM). El hook `tests-de-a-uno.sh` los encola solo. Si cada worktree usa su propia base de pruebas, ponela en `PREPARAR` (ej.: `.env` con sufijo por worktree).
+Cada `lanzar` crea el worktree con git y le pide a Orca un worker supervisado (`orca orchestration worker-start --worktree path:<wt> --agent $AGENTE_ORCA`) dentro de un Run del repo. De Orca se usa:
 
-### Con Orca
+- **La interfaz:** cada slice aparece como worker, con su terminal.
+- **`ask` / `reply`:** si el worker tiene una duda bloqueante, pregunta. Contestale vos, que sos el coordinador.
+- **Heartbeats y `worker-list`:** para saber si sigue vivo.
+- **Gates** (`gate-create`) para lo irreversible.
 
-Lo mismo con las primitivas nativas (cargá la skill `orchestration` para los comandos exactos):
+El loop del coordinador es el de la skill `orchestration` de Orca (`check --wait --types worker_done,escalation,question`), con **una regla agregada: un `worker_done` no se acepta sin recibo verde.**
 
-- Cada slice es una **task** con sus dependencias: `orca orchestration task-create`.
-- Se lanza con `orca orchestration dispatch` o `worker-start`, en un worktree propio (`orca worktree create --agent <id> --prompt "<SPEC>"`).
-- Lo irreversible pasa por un gate: `orca orchestration gate-create`.
-- `orca worktree ps` muestra el estado de todos.
+```text
+llega worker_done del slice X
+  → ./slices verificar X          (re-corre CHECKS + Jev)
+  → CIERRA:    ./slices mergear X  y  orca orchestration worker-release --dispatch <id>
+  → NO CIERRA: ./slices lanzar X   (nuevo worker con el motivo y el veredicto del juez)
+  → 3 veces NO CIERRA: parar y contárselo a la persona; el problema está en el SPEC
+```
+
+Sin Orca (`LANZADOR="local"`): el hijo corre desacoplado (`systemd-run` o `setsid`), `MAX_PARALELO` limita la concurrencia y `verificar` corre solo al terminar.
+
+**El recurso compartido manda.** Código y review se paralelizan; los tests no (una base, poca RAM). El hook `tests-de-a-uno.sh` los pone en fila. Si cada worktree usa su propia base de pruebas, ponela en `orca.yaml → scripts.setup`.
 
 ## 5. No creerle al ejecutor
 
-`./slices verificar <id>` corre después del agente y por fuera de su sesión:
+`./slices verificar <id>` corre por fuera de la sesión del worker:
 
 1. Re-ejecuta cada `CHECKS` de `slices.conf`.
 2. **0 archivos tocados → no cierra**: que el repo ya pasara los tests antes no prueba nada.
-3. **Sin bloque `===RECIBO===` → no cierra.**
-4. Si los checks pasan, el juez compara el diff contra el SPEC: ¿los tests cubren lo pedido, o son triviales? Un juez que no contesta **no cuenta como aprobación**.
-5. Queda `recibos/<id>/recibo.json` con chequeos, archivos tocados, veredicto y motivo.
+3. **Sin recibo** (`===RECIBO===` en el log o en `recibos/<id>/recibo-agente.md`) **→ no cierra.**
+4. Si los checks pasan, juzga **Jev** (`JUEZ="jev"`, script `juez-jev`): una pregunta angosta por cada test exigido del SPEC ("¿hay un test que verifique esto?") y otra sobre si los tests son de relleno. Hace falta cubrir el 80% de los tests exigidos. Un juez que no contesta **no cuenta como aprobación**. Sin TypeSafe: `JUEZ="claude"`, con un modelo distinto del ejecutor.
+5. Queda `recibos/<id>/recibo.json` (más `juez.txt` y `chequeos.log`).
+
+Si no cerró, el próximo `lanzar` le pasa al worker el motivo, el veredicto del juez y la cola de los chequeos que fallaron, y sigue sobre lo que ya escribió.
 
 "Listo" sin recibo verde no es listo.
 

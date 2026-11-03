@@ -11,6 +11,15 @@
 #   ./slices verificar 001-login       # corre los chequeos por fuera y deja el recibo
 #   ./slices mergear 001-login         # entra a la rama base solo si el recibo cerró
 #
+# Con LANZADOR="orca" en slices.conf, `lanzar` no corre el agente acá: le pide a
+# Orca un worker supervisado (`orca orchestration worker-start`) en el worktree
+# del slice. Orca pone la UI, ask/reply, heartbeats y gates; slices pone el SPEC,
+# la verificación por fuera, el juez y el merge. Cuando llega el `worker_done`,
+# el coordinador corre `./slices verificar <id>`: Orca le cree al worker, slices no.
+#
+# Si un slice NO cerró, volver a lanzarlo le pasa al agente el motivo y el
+# veredicto del juez para que arregle eso, sobre lo que ya escribió.
+#
 # La idea, en cuatro reglas:
 #   1. El pedido se escribe: cada slice tiene un SPEC con alcance de archivos y
 #      tests exigidos. Sin SPEC no se lanza nada.
@@ -36,7 +45,9 @@ RECIBOS="recibos"                                # dónde queda la evidencia
 WORKTREES="$(dirname "$RAIZ")/$NOMBRE_REPO-slices"   # una carpeta por slice, afuera del repo
 EJECUTOR="cursor"                                # cursor | claude | codex
 MODELO=""                                        # vacío = el default del CLI
-JUEZ=""                                          # vacío = solo chequeos; "claude" = además opina un modelo
+LANZADOR="local"                                 # local: el hijo corre acá · orca: worker supervisado de Orca
+AGENTE_ORCA="grok"                               # con LANZADOR=orca: agente de Orca (grok, claude, codex, cursor…)
+JUEZ=""                                          # vacío = solo chequeos · "jev" = Jev (TypeSafe) · "claude" = un modelo
 MODELO_JUEZ="sonnet"
 MAX_PARALELO=3                                   # cuántos hijos a la vez (una máquina chica no aguanta más)
 CHECKS=()                                        # "nombre::comando"; `init` los detecta
@@ -44,6 +55,8 @@ PREPARAR=""                                      # comando que corre una vez en 
 [[ -f "$RAIZ/slices.conf" ]] && source "$RAIZ/slices.conf"
 # Las variables de entorno ganan, para probar algo una sola vez.
 EJECUTOR="${SLICES_EJECUTOR:-$EJECUTOR}"; MODELO="${SLICES_MODELO:-$MODELO}"
+LANZADOR="${SLICES_LANZADOR:-$LANZADOR}"; AGENTE_ORCA="${SLICES_AGENTE_ORCA:-$AGENTE_ORCA}"
+JUEZ_JEV="$(dirname "$YO")/juez-jev"; [[ -x "$JUEZ_JEV" ]] || JUEZ_JEV="$(command -v juez-jev || true)"
 
 morir() { echo "slices: $*" >&2; exit 2; }
 wt_de() { echo "$WORKTREES/$1"; }
@@ -66,12 +79,17 @@ cmd_init() {
     [[ -f "$RAIZ/pyproject.toml" || -f "$RAIZ/pytest.ini" ]] && c+=('"tests::python -m pytest -q"')
     [[ -f "$RAIZ/go.mod" ]]         && c+=('"build::go build ./..."' '"tests::go test ./..."')
     [[ ${#c[@]} -eq 0 ]] && c+=('"tests::echo CAMBIAME: poné acá el comando de tus tests; exit 1"')
+    local lanzador="local" juez=""
+    command -v orca >/dev/null 2>&1 && lanzador="orca"
+    [[ -n "${JEV_API_KEY:-}" || -f "$HOME/.config/kit-orquestacion/jev.key" || -f "$HOME/.config/aos/jev.key" ]] && juez="jev"
     cat > "$RAIZ/slices.conf" <<EOF
 # Configuración de ./slices. Es bash: se lee con \`source\`.
 BASE="$BASE"                 # rama a la que se mergea cada slice
-EJECUTOR="cursor"            # cursor | claude | codex
-MODELO=""                    # vacío = el default del CLI
-JUEZ=""                      # "claude" para que un modelo lea el diff contra el SPEC
+LANZADOR="$lanzador"           # local | orca (worker supervisado de Orca)
+AGENTE_ORCA="grok"           # con orca: grok | claude | codex | cursor …
+EJECUTOR="cursor"            # con local: cursor | claude | codex
+MODELO=""                    # vacío = el default del agente
+JUEZ="$juez"                 # jev | claude | vacío (solo chequeos)
 MAX_PARALELO=3               # hijos a la vez
 PREPARAR=""                  # se corre una vez en cada worktree (ej. "npm ci")
 # Lo que tiene que pasar para que un slice cierre. "nombre::comando".
@@ -103,6 +121,7 @@ EOF
   fi
   [[ -f "$RAIZ/CLAUDE.md" ]] || { echo "@AGENTS.md" > "$RAIZ/CLAUDE.md"; echo "creado CLAUDE.md"; }
   grep -qxF "$RECIBOS/*/pid" "$RAIZ/.gitignore" 2>/dev/null || echo "$RECIBOS/*/pid" >> "$RAIZ/.gitignore"
+  grep -qxF "$RECIBOS/.orca-run" "$RAIZ/.gitignore" 2>/dev/null || echo "$RECIBOS/.orca-run" >> "$RAIZ/.gitignore"
   echo "listo. Siguiente: ./slices nuevo <nombre> \"<título>\""
 }
 
@@ -171,6 +190,9 @@ chequeos: <qué corriste y con qué resultado>
 gaps: <qué NO quedó o no pudiste verificar; "ninguno" solo si es verdad>
 ===FIN===
 
+Guardá ese mismo bloque en $RECIBOS/$id/recibo-agente.md antes de terminar.
+$( [[ -s "$(wt_de "$id")/$RECIBOS/$id/reintento.txt" ]] && { echo; cat "$(wt_de "$id")/$RECIBOS/$id/reintento.txt"; } )
+
 ──────────── SPEC ────────────
 $(cat "$(spec_de "$id")")
 EOF
@@ -186,6 +208,44 @@ ejecutar_agente() {  # corre el CLI del ejecutor en el worktree, en primer plano
   esac
 }
 
+# Si el intento anterior no cerró, el próximo prompt lleva el motivo y el juez.
+preparar_reintento() {
+  local id="$1" out; out="$(wt_de "$id")/$RECIBOS/$id"
+  rm -f "$out/reintento.txt"
+  [[ -f "$out/recibo.json" ]] && ! grep -q '"cerrado": true' "$out/recibo.json" || return 0
+  {
+    echo "──────────── INTENTO ANTERIOR: NO CERRÓ ────────────"
+    echo "Motivo: $(grep -oP '"motivo": "\K[^"]*' "$out/recibo.json")"
+    [[ -s "$out/juez.txt" ]] && { echo "Veredicto del juez:"; cat "$out/juez.txt"; }
+    [[ -s "$out/chequeos.log" ]] && grep -q 'ok=false' "$out/chequeos.log" && { echo "Últimas líneas de los chequeos:"; tail -40 "$out/chequeos.log"; }
+    echo "Seguí sobre lo que ya está escrito en este worktree y arreglá exactamente eso."
+  } > "$out/reintento.txt"
+  mv "$out/recibo.json" "$out/recibo.anterior.json"
+  rm -f "$out/recibo-agente.md"
+}
+
+# Worker supervisado de Orca en el worktree del slice. Un Run por repo.
+lanzar_en_orca() {
+  local id="$1" wt="$2" out run; out="$wt/$RECIBOS/$id"
+  command -v orca >/dev/null 2>&1 || morir "LANZADOR=orca pero no está el CLI de orca"
+  run=$(orca orchestration run-current --json 2>/dev/null | jq -r '.result.run.id // .result.run.runId // empty' || true)
+  [[ -n "$run" ]] || run=$(cat "$RAIZ/$RECIBOS/.orca-run" 2>/dev/null || true)
+  if [[ -z "$run" ]]; then
+    run=$(orca orchestration run-create --objective "slices de $NOMBRE_REPO" --json \
+          | jq -r '.result.run.id // .result.run.runId // .result.id // .result.runId // empty')
+    [[ -n "$run" ]] || morir "no pude crear el Run de Orca"
+  fi
+  mkdir -p "$RAIZ/$RECIBOS"; echo "$run" > "$RAIZ/$RECIBOS/.orca-run"
+  if ! orca orchestration worker-start --spec "$(cat "$out/prompt.txt")" --task-title "slice $id" \
+        --worktree "path:$wt" --agent "$AGENTE_ORCA" ${MODELO:+--model "$MODELO"} --run "$run" --json \
+        > "$out/orca-start.json" 2>&1; then
+    cat "$out/orca-start.json" >&2; morir "worker-start falló para $id (no relanzar a ciegas: ver $out/orca-start.json)"
+  fi
+  jq -r '.result.dispatchId // .result.dispatch.id // empty' "$out/orca-start.json" > "$out/orca-dispatch"
+  echo "$id: worker de Orca ($AGENTE_ORCA${MODELO:+ $MODELO}) · dispatch $(cat "$out/orca-dispatch") · run $run"
+  echo "   al llegar su worker_done: ./slices verificar $id"
+}
+
 cmd_lanzar() {
   local dry=""; local ids=()
   for a in "$@"; do [[ "$a" == "--dry-run" ]] && dry=1 || ids+=("$a"); done
@@ -194,7 +254,8 @@ cmd_lanzar() {
     [[ -f "$(spec_de "$id")" ]] || morir "no existe $(spec_de "$id")"
     if corriendo "$id"; then echo "$id: ya hay un hijo corriendo"; continue; fi
     # Tope de hijos a la vez: se espera lugar en vez de saturar la máquina.
-    while (( $(cmd_estado --corriendo | wc -l) >= MAX_PARALELO )); do sleep 15; done
+    # Con Orca no: Orca lleva la cuenta de sus workers.
+    [[ "$LANZADOR" == orca ]] || while (( $(cmd_estado --corriendo | wc -l) >= MAX_PARALELO )); do sleep 15; done
     local wt; wt="$(wt_de "$id")"
     if [[ ! -d "$wt" ]]; then
       mkdir -p "$WORKTREES"
@@ -208,8 +269,10 @@ cmd_lanzar() {
     # El SPEC que manda es el de la rama base: si lo corregiste, el hijo lo ve.
     mkdir -p "$wt/$SPECS" "$wt/$RECIBOS/$id"
     cp "$(spec_de "$id")" "$wt/$SPECS/"
+    preparar_reintento "$id"
     armar_prompt "$id" > "$wt/$RECIBOS/$id/prompt.txt"
     if [[ -n "$dry" ]]; then echo "$id: [dry-run] prompt en $wt/$RECIBOS/$id/prompt.txt"; continue; fi
+    if [[ "$LANZADOR" == orca ]]; then lanzar_en_orca "$id" "$wt"; continue; fi
     # Desacoplado de esta terminal: si se cierra la sesión, el hijo sigue.
     if command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
       systemctl --user reset-failed "$(unidad_de "$id")" 2>/dev/null || true
@@ -257,10 +320,17 @@ cmd_verificar() {
   # "Verde" sin trabajo hecho es un falso positivo: el repo ya pasaba antes.
   local cerrado=$todo_ok motivo=""
   (( tocados > 0 )) || { cerrado=false; motivo="no tocó ningún archivo"; }
-  grep -q '===RECIBO===' "$out/agente.log" 2>/dev/null || { cerrado=false; motivo="${motivo:+$motivo; }el agente no dejó recibo"; }
+  grep -qs '===RECIBO===' "$out/agente.log" "$out/recibo-agente.md" || { cerrado=false; motivo="${motivo:+$motivo; }el agente no dejó recibo"; }
   $todo_ok || motivo="${motivo:+$motivo; }fallan chequeos (ver chequeos.log)"
   local veredicto="sin juez"
-  if $cerrado && [[ "$JUEZ" == "claude" ]]; then
+  if $cerrado && [[ "$JUEZ" == "jev" ]]; then
+    [[ -n "$JUEZ_JEV" ]] || morir "JUEZ=jev pero no encuentro juez-jev (va al lado de slices o en el PATH)"
+    veredicto=$("$JUEZ_JEV" "$(spec_de "$id")" "$wt" "$BASE" 2>&1) || true
+    echo "$veredicto" > "$out/juez.txt"
+    # Un juez que no contesta no es un chequeo que pasó.
+    [[ "$(head -1 <<<"$veredicto")" == CIERRA ]] || { cerrado=false; motivo="${motivo:+$motivo; }Jev no cierra (ver juez.txt)"; }
+    veredicto="jev: $(head -1 <<<"$veredicto")"
+  elif $cerrado && [[ "$JUEZ" == "claude" ]]; then
     veredicto=$( (cd "$wt" && claude -p "Sos el juez de un slice. Abajo van el SPEC y el diff. Respondé en la PRIMERA línea solo CIERRA o NO CIERRA, y después, uno por línea, cada test exigido o criterio del SPEC que NO esté cubierto por el diff. Juzgá por el sentido, no por el nombre del test.
 
 SPEC:
@@ -301,6 +371,7 @@ cmd_estado() {
     elif corriendo "$id"; then e="corriendo"
     elif [[ -f "$r" ]] && grep -q '"cerrado": true' "$r"; then e="cerró — falta mergear"
     elif [[ -f "$r" ]]; then e="NO cerró: $(grep -oP '"motivo": "\K[^"]*' "$r")"
+    elif [[ -s "$wt/$RECIBOS/$id/orca-dispatch" ]]; then e="en Orca (dispatch $(cat "$wt/$RECIBOS/$id/orca-dispatch")); al worker_done: verificar"
     elif [[ -d "$wt" ]]; then e="cortado a medias (relanzar: sigue sobre lo escrito)"
     else e="sin lanzar"; fi
     if [[ "$solo" == "--corriendo" ]]; then [[ "$e" == corriendo ]] && echo "$id"; else printf '%-34s %s\n' "$id" "$e"; fi

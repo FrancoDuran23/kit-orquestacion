@@ -19,7 +19,7 @@ set -euo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROYECTO="" TERCEROS=1 MCP=1 DRY=""
 AGENTES="${KIT_AGENTES:-claude-code cursor}"
-PROPIAS=(orquestar-slices code-review-en-loop qa-con-video)
+PROPIAS=(iniciar-orquestacion orquestar-slices code-review-en-loop qa-con-video)
 HOOKS_BASH=(sin-coautor.sh gate-irreversible.sh tests-de-a-uno.sh)
 MCP_PLAYWRIGHT='{"command":"npx","args":["-y","@playwright/mcp@latest"]}'
 
@@ -122,7 +122,7 @@ if [[ -z "$PROYECTO" ]]; then
 
   paso "Hooks de Claude Code → ~/.claude/settings.json"
   registrar_hooks "$HOME/.claude/settings.json" "$KIT/hooks"
-  run chmod +x "$KIT/hooks/"*.sh "$KIT/hooks/git-commit-msg" "$KIT/bin/slices"
+  run chmod +x "$KIT/hooks/"*.sh "$KIT/hooks/git-commit-msg" "$KIT/bin/slices" "$KIT/bin/juez-jev"
 
   if [[ -n "$MCP" ]]; then
     paso "MCP de Playwright (Claude Code y Cursor)"
@@ -134,7 +134,8 @@ if [[ -z "$PROYECTO" ]]; then
 
   paso "Listo"
   cat <<EOF
-  · slices:   ln -s $KIT/bin/slices ~/.local/bin/slices   (o copialo a cada repo)
+  · slices y juez-jev:  ln -s $KIT/bin/slices $KIT/bin/juez-jev ~/.local/bin/   (o copialos a cada repo)
+  · para configurar un repo de punta a punta, pedile al agente: "iniciar orquestación"
   · en un repo, para que viaje con el equipo:  $KIT/install.sh --proyecto <repo>
 EOF
   exit 0
@@ -165,14 +166,15 @@ fi
 
 paso "Orquestación: slices + Orca"
 copiar "$KIT/bin/slices" "$PROYECTO/slices"
+copiar "$KIT/bin/juez-jev" "$PROYECTO/juez-jev"
 copiar "$KIT/plantillas/orca.yaml" "$PROYECTO/orca.yaml"
 copiar "$KIT/plantillas/worktreeinclude" "$PROYECTO/.worktreeinclude"
 
 paso "Listo"
 cat <<EOF
   Siguiente, en $PROYECTO:
-  1. ./slices init              (crea slices.conf y AGENTS.md; revisá CHECKS)
+  1. ./slices init              (crea slices.conf y AGENTS.md; revisá CHECKS, LANZADOR y JUEZ)
   2. Editá orca.yaml → scripts.setup con lo que necesita cada worktree
-  3. git add .claude .mcp.json .cursor orca.yaml .worktreeinclude slices skills-lock.json && git commit
+  3. git add .claude .mcp.json .cursor orca.yaml .worktreeinclude slices juez-jev skills-lock.json && git commit
      (el hook commit-msg vive en .git/hooks: cada persona corre este install una vez)
 EOF
