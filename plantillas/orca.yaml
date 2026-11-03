@@ -1,0 +1,17 @@
+# orca.yaml — configuración de Orca para este repo (commitealo).
+# Doc: https://github.com/stablyai/orca/blob/main/docs/site/content/docs/model/orca-yaml.mdx
+scripts:
+  # Corre en cada worktree nuevo. $ORCA_WORKTREE_PATH es el worktree, $ORCA_ROOT_PATH el checkout principal.
+  setup: |
+    # 1. Dependencias del proyecto (descomentá la que corresponda):
+    # uv sync
+    # pnpm install
+    # 2. Base de pruebas propia por worktree, para que los agentes en paralelo no se pisen:
+    # sed -i "s#^DATABASE_URL=.*#&_wt_${ORCA_WORKSPACE_NAME}#" .env
+    echo "worktree listo: $ORCA_WORKSPACE_NAME"
+# El agente arranca cuando terminó el setup.
+setupAgentStartupPolicy: wait-for-setup
+defaultTabs:
+  - title: Agente          # sin comando: lo ocupa el agente que lanza Orca
+  - title: Slices
+    command: ./slices estado

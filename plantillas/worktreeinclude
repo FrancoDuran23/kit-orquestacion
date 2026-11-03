@@ -1,0 +1,2 @@
+# Archivos ignorados por git que se copian a cada worktree nuevo (uno por línea, sin globs).
+.env

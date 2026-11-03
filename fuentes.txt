@@ -1,0 +1,11 @@
+# Skills de terceros que instala ./install.sh, siempre bajadas desde su repo original.
+# Formato: <repo de GitHub>  <skills: * o lista con comas>  [excluir: lista con comas]
+#
+# mattpocock: todas menos `code-review`, que pisaría el /code-review de Claude Code
+# que usa la skill code-review-en-loop. Para traerla igual: borrá la exclusión.
+mattpocock/skills      *            code-review
+pbakaus/impeccable     impeccable
+uxKero/kero-stack      *
+vercel-labs/vgpu       vgpu
+# Las de Orca (stablyai/orca) se instalan aparte con `orca skills install`, que trae
+# la versión que corresponde a tu Orca. Sin Orca instalado se usan las de main.

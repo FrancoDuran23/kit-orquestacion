@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Git hook commit-msg: saca las líneas de atribución de IA de cualquier commit,
+# las haga quien las haga (Claude, Cursor/Grok, Codex). Es la red de seguridad
+# para los agentes que commitean por fuera de Claude Code.
+# Se instala en .git/hooks/commit-msg (los worktrees comparten ese directorio).
+f="$1"
+sed -i -E '/^[Cc]o-[Aa]uthored-[Bb]y:.*([Cc]laude|[Cc]ursor|[Cc]odex|noreply@anthropic\.com|cursoragent@cursor\.com)/d;
+           /[Gg]enerated with \[?[Cc]laude [Cc]ode/d' "$f"
+# Si quedaron líneas vacías al final, se limpian.
+sed -i -e ':a' -e '/^\n*$/{$d;N;ba' -e '}' "$f"
+exit 0
