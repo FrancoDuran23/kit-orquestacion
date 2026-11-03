@@ -56,7 +56,7 @@ Principio: **el modelo más capaz piensa poco y decide mucho; el que tiene más 
 
 | Tiene | Coordinador | Workers | Juez | Reserva |
 |---|---|---|---|---|
-| Claude Max + Cursor | Opus | Grok vía Cursor | Jev o Sonnet | Composer → Sonnet |
+| Claude Max + Cursor | Opus | Grok vía Cursor (`AGENTE_ORCA=cursor`, `MODELO=cursor-grok-4.6-high`) | Jev o Sonnet | Composer → Sonnet |
 | Claude Max + ChatGPT | Opus | Codex | Jev o Sonnet | Sonnet |
 | Solo Claude Max | Opus | Sonnet | Jev o Haiku | bajar el paralelismo |
 | Solo Claude Pro | Sonnet | Sonnet, de a 1 o 2 | Jev o Haiku | no orquestar lo chico |
@@ -65,7 +65,13 @@ Principio: **el modelo más capaz piensa poco y decide mucho; el que tiene más 
 
 Si tiene varias cuentas del mismo proveedor: `orca account add --agent claude|codex`, y Orca las rota.
 
-**D. Checks.** Mostrá los comandos de tests detectados: "¿Son estos?". Si los tests usan base de datos, preguntá cómo se crea una base por worktree.
+**D. Modo.** ¿Hasta dónde avanza solo `./slices auto`? Recomendado: `semi` si priorizó calidad, `auto` si priorizó cuota o velocidad.
+- `auto`: lanza por dependencias, verifica (tests + Jev), relanza con el motivo y mergea a la rama del ticket solo. Frena en preguntas del worker, conflictos y `MAX_INTENTOS` rechazos.
+- `semi`: igual, pero frena antes de cada merge para revisar el diff.
+- `manual`: cada paso a mano (`lanzar`, `verificar`, `mergear`).
+Push y MR nunca son automáticos.
+
+**E. Checks.** Mostrá los comandos de tests detectados: "¿Son estos?". Si los tests usan base de datos, preguntá cómo se crea una base por worktree.
 
 ## 3. Setup de mattpocock (tracker, labels, glosario)
 
@@ -83,9 +89,10 @@ Mostrá todo junto, para editar antes de escribir:
 - `slices.conf` con el plan:
   ```bash
   LANZADOR="orca"
-  AGENTE_ORCA="grok"        # workers
-  MODELO=""                 # o el id exacto
+  AGENTE_ORCA="cursor"      # workers: cursor (cursor-agent) | claude | codex | grok (CLI de xAI, otra suscripción)
+  MODELO="cursor-grok-4.6-high"  # Grok vía Cursor; vacío = el default del agente
   JUEZ="jev"                # o "claude"
+  MODO="auto"               # auto | semi | manual
   CHECKS=( "tests::<comando real>" )
   ```
 - `orca.yaml → scripts.setup`: dependencias, `.env` y la base por worktree. `.worktreeinclude` con el `.env`.
@@ -115,8 +122,8 @@ Un paso a la vez:
 Un slice de juguete, de punta a punta:
 
 1. `./slices nuevo prueba "Slice de prueba"`, con un SPEC mínimo: una función trivial y 2 tests exigidos.
-2. `./slices lanzar <id>`: aparece el worker en Orca.
-3. Al llegar el `worker_done`: `./slices verificar <id>` → `CIERRA`, con Jev cubriendo los 2 tests.
+2. `SLICES_MODO=auto ./slices auto <id>`: aparece el worker en Orca y el loop espera su `worker_done`.
+3. El loop verifica solo → `CIERRA`, con Jev cubriendo los 2 tests, y mergea.
 4. Deshacé la prueba: `git worktree remove .slices/<id>`, `git branch -D slice-<id>`, el SPEC y `orca orchestration worker-release --dispatch <id>`.
 
 Si algo falla, se arregla acá, no en el primer ticket real.

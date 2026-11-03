@@ -91,7 +91,9 @@ Cada `lanzar` crea el worktree con git y le pide a Orca un worker supervisado (`
 - **Heartbeats y `worker-list`:** para saber si sigue vivo.
 - **Gates** (`gate-create`) para lo irreversible.
 
-El loop del coordinador es el de la skill `orchestration` de Orca (`check --wait --types worker_done,escalation,question`), con **una regla agregada: un `worker_done` no se acepta sin recibo verde.**
+**`./slices auto` hace este loop solo** (según `MODO`: `auto` mergea, `semi` frena antes de cada merge): lanza los slices cuyas dependencias ya entraron, espera los `worker_done`, verifica, relanza con el motivo y mergea. Frena y devuelve el control cuando un worker pregunta algo, cuando hay un conflicto de merge o cuando un slice no cierra en `MAX_INTENTOS`. Para retomar un slice escalado: arreglá el SPEC y `./slices lanzar <id>`.
+
+Si lo hacés a mano, el loop es el de la skill `orchestration` de Orca (`check --wait --types worker_done,escalation,question`), con **una regla agregada: un `worker_done` no se acepta sin recibo verde.**
 
 ```text
 llega worker_done del slice X

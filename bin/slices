@@ -10,6 +10,8 @@
 #   ./slices estado                    # quién corre, quién terminó, quién cerró
 #   ./slices verificar 001-login       # corre los chequeos por fuera y deja el recibo
 #   ./slices mergear 001-login         # entra a la rama base solo si el recibo cerró
+#   ./slices auto [<id>…]              # el loop entero solo: lanza por dependencias, verifica,
+#                                      # relanza con el motivo y mergea (según MODO)
 #
 # Con LANZADOR="orca" en slices.conf, `lanzar` no corre el agente acá: le pide a
 # Orca un worker supervisado (`orca orchestration worker-start`) en el worktree
@@ -45,19 +47,22 @@ RECIBOS="recibos"                                # dónde queda la evidencia
 WORKTREES="$RAIZ/.slices"                        # una carpeta por slice, adentro del repo e ignorada:
                                                  # así heredan la confianza de la carpeta (Claude Code,
                                                  # Cursor) y el agente no se frena preguntando en cada slice
-EJECUTOR="cursor"                                # cursor | claude | codex
+EJECUTOR="cursor"                                # cursor | claude | codex | cmd (EJECUTOR_CMD)
 MODELO=""                                        # vacío = el default del CLI
 LANZADOR="local"                                 # local: el hijo corre acá · orca: worker supervisado de Orca
-AGENTE_ORCA="grok"                               # con LANZADOR=orca: agente de Orca (grok, claude, codex, cursor…)
+AGENTE_ORCA="cursor"                             # con LANZADOR=orca: agente de Orca (cursor = cursor-agent, claude, codex, grok = CLI de xAI)
 JUEZ=""                                          # vacío = solo chequeos · "jev" = Jev (TypeSafe) · "claude" = un modelo
 MODELO_JUEZ="sonnet"
 MAX_PARALELO=3                                   # cuántos hijos a la vez (una máquina chica no aguanta más)
+MODO="semi"                                      # para `auto`: auto = mergea solo · semi = frena antes de cada
+                                                 # merge para revisar el diff · manual = no usar `auto`
+MAX_INTENTOS=3                                   # rechazos seguidos antes de pasarle el slice a una persona
 CHECKS=()                                        # "nombre::comando"; `init` los detecta
 PREPARAR=""                                      # comando que corre una vez en cada worktree (npm install…)
 [[ -f "$RAIZ/slices.conf" ]] && source "$RAIZ/slices.conf"
 # Las variables de entorno ganan, para probar algo una sola vez.
 EJECUTOR="${SLICES_EJECUTOR:-$EJECUTOR}"; MODELO="${SLICES_MODELO:-$MODELO}"
-LANZADOR="${SLICES_LANZADOR:-$LANZADOR}"; AGENTE_ORCA="${SLICES_AGENTE_ORCA:-$AGENTE_ORCA}"
+LANZADOR="${SLICES_LANZADOR:-$LANZADOR}"; AGENTE_ORCA="${SLICES_AGENTE_ORCA:-$AGENTE_ORCA}"; MODO="${SLICES_MODO:-$MODO}"
 JUEZ_JEV="$(dirname "$YO")/juez-jev"; [[ -x "$JUEZ_JEV" ]] || JUEZ_JEV="$(command -v juez-jev || true)"
 
 morir() { echo "slices: $*" >&2; exit 2; }
@@ -88,10 +93,11 @@ cmd_init() {
 # Configuración de ./slices. Es bash: se lee con \`source\`.
 BASE="$BASE"                 # rama a la que se mergea cada slice
 LANZADOR="$lanzador"           # local | orca (worker supervisado de Orca)
-AGENTE_ORCA="grok"           # con orca: grok | claude | codex | cursor …
+AGENTE_ORCA="cursor"         # con orca: cursor (cursor-agent) | claude | codex | grok (CLI de xAI)
 EJECUTOR="cursor"            # con local: cursor | claude | codex
 MODELO=""                    # vacío = el default del agente
 JUEZ="$juez"                 # jev | claude | vacío (solo chequeos)
+MODO="semi"                  # ./slices auto: auto (mergea solo) | semi (frena antes de mergear) | manual
 MAX_PARALELO=3               # hijos a la vez
 PREPARAR=""                  # se corre una vez en cada worktree (ej. "npm ci")
 # Lo que tiene que pasar para que un slice cierre. "nombre::comando".
@@ -207,6 +213,8 @@ ejecutar_agente() {  # corre el CLI del ejecutor en el worktree, en primer plano
     cursor) cursor-agent --print --force --trust ${MODELO:+--model "$MODELO"} --workspace "$wt" --output-format text "$prompt" ;;
     claude) (cd "$wt" && claude -p "$prompt" ${MODELO:+--model "$MODELO"} --dangerously-skip-permissions) ;;
     codex)  (cd "$wt" && codex exec --dangerously-bypass-approvals-and-sandbox ${MODELO:+-m "$MODELO"} "$prompt") ;;
+    # Cualquier otro CLI (o un falso para probar): EJECUTOR_CMD recibe el prompt en $SLICES_PROMPT.
+    cmd)    (cd "$wt" && SLICES_PROMPT="$prompt" bash -c "${EJECUTOR_CMD:?EJECUTOR=cmd necesita EJECUTOR_CMD}") ;;
     *) echo "EJECUTOR desconocido: $EJECUTOR" >&2; return 2 ;;
   esac
 }
@@ -256,6 +264,8 @@ cmd_lanzar() {
   for id in "${ids[@]}"; do
     [[ -f "$(spec_de "$id")" ]] || morir "no existe $(spec_de "$id")"
     if corriendo "$id"; then echo "$id: ya hay un hijo corriendo"; continue; fi
+    # Lanzar a mano un slice escalado es la decisión de la persona: vuelve al loop desde cero.
+    rm -f "$(wt_de "$id")/$RECIBOS/$id/escalado" "$(wt_de "$id")/$RECIBOS/$id/intentos"
     # Tope de hijos a la vez: se espera lugar en vez de saturar la máquina.
     # Con Orca no: Orca lleva la cuenta de sus workers.
     [[ "$LANZADOR" == orca ]] || while (( $(cmd_estado --corriendo | wc -l) >= MAX_PARALELO )); do sleep 15; done
@@ -368,20 +378,140 @@ EOF
 }
 
 # ── estado ──────────────────────────────────────────────────────────────────
+ids_de_specs() { local f; for f in "$RAIZ/$SPECS"/*.spec.md; do [[ -e "$f" ]] && basename "$f" .spec.md; done; }
+
+# Estado de un slice como código: mergeado escalado corriendo orca cerro nocerro cortado sinlanzar
+estado_de() {
+  local id="$1" wt; wt="$(wt_de "$id")"; local out="$wt/$RECIBOS/$id" r="$wt/$RECIBOS/$id/recibo.json"
+  # Sin `| grep -q`: con pipefail, grep corta antes y git log muere por SIGPIPE.
+  if [[ -n "$(git -C "$RAIZ" log -1 --format=%h -F --grep="merge slice $id " "$BASE" 2>/dev/null)" ]]; then echo mergeado
+  elif [[ -s "$out/escalado" ]]; then echo escalado
+  elif corriendo "$id"; then echo corriendo
+  elif [[ -f "$r" ]] && grep -q '"cerrado": true' "$r"; then echo cerro
+  elif [[ -f "$r" ]]; then echo nocerro
+  elif [[ -s "$out/orca-dispatch" ]]; then echo orca
+  elif [[ -d "$wt" ]]; then echo cortado
+  else echo sinlanzar; fi
+}
+
 cmd_estado() {
-  local solo="${1:-}"
-  for f in "$RAIZ/$SPECS"/*.spec.md; do
-    [[ -e "$f" ]] || continue
-    local id; id="$(basename "$f" .spec.md)"; local wt; wt="$(wt_de "$id")"; local r="$wt/$RECIBOS/$id/recibo.json" e
-    # Sin `| grep -q`: con pipefail, grep corta antes y git log muere por SIGPIPE.
-    if [[ -n "$(git -C "$RAIZ" log -1 --format=%h -F --grep="merge slice $id " "$BASE" 2>/dev/null)" ]]; then e="mergeado"
-    elif corriendo "$id"; then e="corriendo"
-    elif [[ -f "$r" ]] && grep -q '"cerrado": true' "$r"; then e="cerró — falta mergear"
-    elif [[ -f "$r" ]]; then e="NO cerró: $(grep -oP '"motivo": "\K[^"]*' "$r")"
-    elif [[ -s "$wt/$RECIBOS/$id/orca-dispatch" ]]; then e="en Orca (dispatch $(cat "$wt/$RECIBOS/$id/orca-dispatch")); al worker_done: verificar"
-    elif [[ -d "$wt" ]]; then e="cortado a medias (relanzar: sigue sobre lo escrito)"
-    else e="sin lanzar"; fi
-    if [[ "$solo" == "--corriendo" ]]; then [[ "$e" == corriendo ]] && echo "$id"; else printf '%-34s %s\n' "$id" "$e"; fi
+  local solo="${1:-}" id e wt out
+  while read -r id; do
+    [[ -n "$id" ]] || continue
+    wt="$(wt_de "$id")"; out="$wt/$RECIBOS/$id"; e="$(estado_de "$id")"
+    if [[ "$solo" == "--corriendo" ]]; then [[ "$e" == corriendo ]] && echo "$id"; continue; fi
+    case "$e" in
+      cerro)    e="cerró — falta mergear" ;;
+      nocerro)  e="NO cerró: $(grep -oP '"motivo": "\K[^"]*' "$out/recibo.json")" ;;
+      escalado) e="ESCALADO: $(cat "$out/escalado")" ;;
+      orca)     e="en Orca (dispatch $(cat "$out/orca-dispatch")); al worker_done: verificar" ;;
+      cortado)  e="cortado a medias (relanzar: sigue sobre lo escrito)" ;;
+      sinlanzar) e="sin lanzar" ;;
+    esac
+    printf '%-34s %s\n' "$id" "$e"
+  done < <(ids_de_specs)
+}
+
+# ── auto ────────────────────────────────────────────────────────────────────
+# Ids de los que depende un slice, leídos de "**Depende de:**" (acepta 002 o 002-pagos).
+deps_de() {
+  local linea n; linea=$(grep -m1 -oP '\*\*Depende de:\*\*\K.*' "$(spec_de "$1")" 2>/dev/null || true)
+  local m
+  for n in $(grep -oE '\b[0-9]{3}\b' <<<"$linea"); do
+    # awk lee todo (sin cortar el pipe): con pipefail, un `grep -m1` haría fallar al productor.
+    m=$(ids_de_specs | awk -v p="^$n-" '$0 ~ p && !x { print; x = 1 }')
+    echo "${m:-$n-desconocido}"
+  done
+}
+deps_listas() { local d; for d in $(deps_de "$1"); do [[ "$(estado_de "$d")" == mergeado ]] || return 1; done; }
+escalar() {
+  local id="$1" motivo="$2" out; out="$(wt_de "$id")/$RECIBOS/$id"
+  mkdir -p "$out"; echo "$motivo" > "$out/escalado"
+  echo "⚠ $id ESCALADO: $motivo"
+}
+
+# Mensajes de Orca: verifica cada worker_done; preguntas y escalamientos frenan el loop.
+procesar_orca() {
+  local run="$1" resp msgs n i tipo disp id f frenar=""
+  resp=$(orca orchestration check --run "$run" --wait --types "worker_done,escalation,question" \
+         --timeout-ms 600000 --json 2>/dev/null) || return 0
+  n=$(jq '.result.messages | length' <<<"$resp" 2>/dev/null || echo 0)
+  for (( i=0; i<n; i++ )); do
+    tipo=$(jq -r ".result.messages[$i].type" <<<"$resp")
+    if [[ "$tipo" == worker_done ]]; then
+      disp=$(jq -r ".result.messages[$i].payload | fromjson? | .dispatchId // empty" <<<"$resp")
+      id=""; for f in "$WORKTREES"/*/"$RECIBOS"/*/orca-dispatch; do [[ -f "$f" && "$(cat "$f")" == "$disp" ]] && id=$(basename "$(dirname "$f")"); done
+      [[ -n "$id" && "$(estado_de "$id")" == orca ]] || continue
+      echo "── worker_done de $id: verificando por fuera"
+      cmd_verificar "$id" || true
+      orca orchestration worker-release --dispatch "$disp" --json >/dev/null 2>&1 || true
+    else
+      frenar=1
+      echo "── el worker necesita al coordinador ($tipo):"
+      jq -r ".result.messages[$i] | \"   id: \(.id // \"?\")\n   \(.subject // \"\")\n   \(.body // \"\")\"" <<<"$resp"
+    fi
+  done
+  if [[ -n "$frenar" ]]; then
+    echo "   Contestá con: orca orchestration reply --id <id> --body \"…\"  y volvé a correr ./slices auto"
+    return 3
+  fi
+  local delivery; delivery=$(jq -r '.result.deliveryId // empty' <<<"$resp")
+  [[ -z "$delivery" ]] || orca orchestration check --run "$run" --ack "$delivery" --json >/dev/null 2>&1 || true
+}
+
+cmd_auto() {
+  [[ "$MODO" == manual ]] && morir "MODO=manual en slices.conf: usá lanzar / verificar / mergear a mano (o SLICES_MODO=auto)"
+  local ids=("$@"); (( ${#ids[@]} )) || mapfile -t ids < <(ids_de_specs)
+  (( ${#ids[@]} )) || morir "no hay SPECs en $SPECS"
+  echo "slices auto · modo $MODO · lanzador $LANZADOR · ${#ids[@]} slices · máx $MAX_PARALELO a la vez"
+  local id e activos listos bloqueados intentos out avance
+  while true; do
+    activos=0; listos=0; bloqueados=0; avance=""
+    for id in "${ids[@]}"; do
+      e="$(estado_de "$id")"; out="$(wt_de "$id")/$RECIBOS/$id"
+      case "$e" in
+        mergeado) listos=$((listos + 1)) ;;
+        escalado) bloqueados=$((bloqueados + 1)) ;;
+        corriendo|orca) activos=$((activos + 1)) ;;
+        cerro)
+          if [[ "$MODO" == auto ]]; then
+            if ( cmd_mergear "$id" ); then avance=1; listos=$((listos + 1))
+            else escalar "$id" "el merge falló (¿conflicto o cambios sin commitear en $RAIZ?)"; bloqueados=$((bloqueados + 1)); fi
+          else
+            echo "✔ $id cerró. Revisá el diff (git -C $(wt_de "$id") diff $BASE) y: ./slices mergear $id"
+            echo "revisar diff y mergear (MODO=semi)" > "$out/escalado"; bloqueados=$((bloqueados + 1))
+          fi ;;
+        nocerro|cortado|sinlanzar)
+          intentos=$(cat "$out/intentos" 2>/dev/null || echo 0)
+          if [[ "$e" == nocerro ]] && (( intentos >= MAX_INTENTOS )); then
+            escalar "$id" "no cerró en $intentos intentos: el problema está en el SPEC o hace falta una persona"
+            bloqueados=$((bloqueados + 1)); continue
+          fi
+          if ! deps_listas "$id"; then
+            local d; for d in $(deps_de "$id"); do
+              [[ "$(estado_de "$d")" == escalado || "$d" == *-desconocido ]] && { escalar "$id" "depende de $d, que está trabado"; bloqueados=$((bloqueados + 1)); continue 2; }
+            done
+            continue
+          fi
+          (( activos < MAX_PARALELO )) || continue
+          if ! ( cmd_lanzar "$id" ); then escalar "$id" "no se pudo lanzar (ver la salida de arriba)"; bloqueados=$((bloqueados + 1)); continue; fi
+          mkdir -p "$out"; echo $((intentos + 1)) > "$out/intentos"
+          activos=$((activos + 1)); avance=1 ;;
+      esac
+    done
+    if (( listos + bloqueados >= ${#ids[@]} )); then
+      echo; cmd_estado
+      (( bloqueados )) && { echo "Terminó con $bloqueados slice(s) esperando a una persona (ver ESCALADO)."; return 3; }
+      echo "Todos mergeados en $BASE. Siguiente: review en loop, QA y el push/MR (son tuyos)."; return 0
+    fi
+    if (( activos == 0 )) && [[ -z "$avance" ]]; then
+      echo; cmd_estado; echo "Nada para lanzar ni corriendo: revisá las dependencias de los que faltan."; return 3
+    fi
+    if [[ "$LANZADOR" == orca ]] && (( activos > 0 )); then
+      procesar_orca "$(cat "$RAIZ/$RECIBOS/.orca-run" 2>/dev/null)" || return 3
+    else
+      sleep 20
+    fi
   done
 }
 
@@ -400,6 +530,10 @@ cmd_mergear() {
   # La evidencia sin trackear que dejó un `--dry-run` en la raíz estorba al merge.
   git -C "$RAIZ" merge --no-ff -q "slice-$id" -m "merge slice $id ($nota)" \
     || morir "el merge de $id tiene conflictos: resolvelos en $RAIZ y commiteá con el mensaje 'merge slice $id (…)'"
+  # Si los recibos están ignorados por git, se perderían con el worktree: se guardan en la raíz.
+  if git -C "$wt" check-ignore -q "$RECIBOS/$id/recibo.json" 2>/dev/null; then
+    mkdir -p "$RAIZ/$RECIBOS"; cp -r "$wt/$RECIBOS/$id" "$RAIZ/$RECIBOS/" 2>/dev/null || true
+  fi
   git -C "$RAIZ" worktree remove --force "$wt"
   git -C "$RAIZ" branch -q -d "slice-$id" 2>/dev/null || true
   echo "$id mergeado a $BASE. El push es tuyo."
@@ -413,6 +547,7 @@ case "${1:-ayuda}" in
   estado)    shift; cmd_estado "$@" ;;
   verificar) shift; cmd_verificar "$@" ;;
   mergear)   shift; cmd_mergear "$@" ;;
+  auto)      shift; cmd_auto "$@" ;;
   _trabajar) shift; cmd__trabajar "$@" ;;
-  *) sed -n '2,24p' "$YO" | sed 's/^# \{0,1\}//' ;;
+  *) sed -n '2,26p' "$YO" | sed 's/^# \{0,1\}//' ;;
 esac
