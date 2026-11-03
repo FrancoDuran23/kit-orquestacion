@@ -11,6 +11,37 @@ Un modelo planifica, otros ejecutan, un juez verifica y **el código orquesta**.
 
 Partí solo si hay **al menos dos pedazos independientes** o si el trabajo no entra en una sesión. Si es un fix de una función, hacelo directo. Para decidir el reparto en casos dudosos, cargá `kero-orchestrate`.
 
+## Qué skill usar en cada momento
+
+Reconocé el momento y cargá la skill sin esperar a que la nombren. Si no está instalada, seguí con el principio y avisá una vez.
+
+| Momento | Señal | Skill |
+|---|---|---|
+| **Antes de partir** | el pedido es difuso, hay decisiones abiertas | `grilling` (o `grill-with-docs` si aparecen términos del dominio) |
+| | los términos del dominio se confunden o cambian de nombre | `domain-modeling` |
+| | el trabajo no entra en una sesión | `wayfinder` |
+| | hay que investigar una API o una doc | `research` (con el modelo chico) |
+| | hay una duda de diseño que se resuelve probando | `prototype` |
+| **Partir (el DAG)** | el plan está claro y hay que cortarlo | `to-tickets` → cada ticket se vuelve un `./slices nuevo` |
+| | hay que pasar la charla a un SPEC | `to-spec` |
+| | llegan issues sin clasificar | `triage` |
+| | ¿conviene partir o no? | `kero-orchestrate` |
+| **Dentro del slice** (va al SPEC del worker) | comportamiento nuevo con tests | "trabajá con `tdd`" |
+| | bug difícil o lentitud | "seguí `diagnosing-bugs`"; el SPEC lleva el repro |
+| | cambia la interfaz de un módulo | `codebase-design` |
+| | UI | `impeccable` para diseñar; `kero-audit` antes de decir que está listo |
+| | WebGPU, shaders | `vgpu` |
+| **Verificar** | llegó un `worker_done` | `./slices verificar` (checks + Jev): siempre |
+| | dos versiones para elegir | `kero-blind` (que juzgue la persona, sin saber cuál es cuál) |
+| **Cerrar** | todo integrado | `code-review-en-loop` → `qa-con-video` si hay UI → `pr` |
+| | terminó la sesión | `retro` si algo salió mal dos veces |
+| **Cambio de manos** | la sesión se llena o pasa a otro agente | `handoff` |
+| | hay pasos que solo puede hacer la persona (credenciales, dashboards) | `wizard` |
+| **Orca** | workers, terminales, worktrees | `orchestration` / `orca-cli` |
+| **No sé cuál** | | `ask-matt` (router de las de mattpocock) |
+
+El worker no carga skills por su cuenta: si un slice necesita `tdd` o `diagnosing-bugs`, decilo en el SPEC.
+
 ## 1. Roles
 
 | Rol | Por defecto | Hace | No hace |

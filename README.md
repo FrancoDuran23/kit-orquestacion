@@ -30,7 +30,7 @@ worker_done            → ./slices verificar X   (checks + Jev)
   NO CIERRA            → ./slices lanzar X      (el worker recibe el motivo y arregla eso)
 ```
 
-**Para arrancar en un repo nuevo:** pedile al agente *"iniciar orquestación"*. Te pregunta qué suscripciones tenés, te recomienda quién planifica, quién ejecuta y quién juzga, y te guía hasta dejar Orca configurado y un slice de prueba andando.
+**Para arrancar en un repo nuevo:** `/iniciar-orquestacion`. Te pregunta qué suscripciones tenés, te recomienda quién planifica, quién ejecuta y quién juzga, y te guía hasta dejar Orca configurado y un slice de prueba andando.
 
 ## Qué trae
 
@@ -38,8 +38,8 @@ worker_done            → ./slices verificar X   (checks + Jev)
 
 | Skill | Para qué |
 |---|---|
-| `iniciar-orquestacion` | Entrevista: qué suscripciones tenés y para qué; recomienda el plan y guía la configuración de Orca paso a paso. |
-| `orquestar-slices` | El método: roles, DAG, SPEC, Orca supervisa, slices verifica, Jev juzga, merge con recibo. |
+| `iniciar-orquestacion` | `/iniciar-orquestacion`: mira el repo, pregunta qué suscripciones tenés, recomienda el plan, corre el setup de mattpocock (tracker, labels, glosario) y deja Orca, slices y Jev andando con un slice de prueba. |
+| `orquestar-slices` | El método: roles, DAG, SPEC, Orca supervisa, slices verifica, Jev juzga, merge con recibo. Incluye el mapa de qué skill usar en cada momento (grilling, to-tickets, tdd, diagnosing-bugs, impeccable, kero-*, pr…). |
 | `code-review-en-loop` | `/code-review` → arreglar → repetir hasta limpio. |
 | `qa-con-video` | Videos con Playwright en el issue (para QA) y en el MR/PR (para el revisor). |
 
