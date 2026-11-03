@@ -1,0 +1,9 @@
+{
+  "_comentario": "Definición única de los servidores MCP del kit. install.sh la traduce al formato de cada cliente.",
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
+    }
+  }
+}

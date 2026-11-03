@@ -14,7 +14,7 @@ Configurar Orca a mano es engorroso. Esta skill lo hace conversando: **mira, pre
 - **Una sección, una respuesta.** Cada pregunta va con la opción recomendada primero, para que se acepte con un "sí". Si al mirar el repo una sección ya quedó resuelta, salteala y decí por qué.
 - **Borrador antes de escribir.** Todo lo que se escribe en el repo se muestra primero y se puede editar.
 - **Cada paso se verifica** con un comando que demuestre que quedó bien. Si falla, se arregla antes de seguir.
-- **Los logins y la confianza de carpetas los hace la persona** (en Claude Code: `! <comando>`). Nunca los aceptes vos mandando teclas.
+- **Los logins y la confianza de carpetas los hace la persona** (en Claude Code con `! <comando>`; en otros clientes, en su terminal). Nunca los aceptes vos mandando teclas.
 - **Nada irreversible sin OK:** push, crear repos o labels remotos, gastar en APIs pagas.
 
 ## 1. Mirar
@@ -25,14 +25,16 @@ Sin preguntar nada todavía:
 - `CLAUDE.md` / `AGENTS.md`: ¿existen? ¿ya tienen un bloque `## Agent skills` o `## Orquestación`?
 - `docs/agents/`: ¿ya se corrió este setup o el de mattpocock antes?
 - Cómo se corren los tests (`pyproject.toml`, `package.json`, `Cargo.toml`, `Makefile`, CI) y si usan base de datos.
-- Qué hay instalado: `orca`, `slices`, `juez-jev`, `.mcp.json`, `orca.yaml`, y si están las skills de mattpocock (`setup-matt-pocock-skills`, `to-tickets`, `triage`) y las del kit.
+- Qué hay instalado: `orca`, `slices`, `juez-jev`, `engram`, `orca.yaml`, la config de MCP de cada cliente, y si están las skills de mattpocock (`setup-matt-pocock-skills`, `to-tickets`, `triage`) y las del kit. Las skills pueden estar en `~/.agents/skills`, `~/.claude/skills`, `.cursor/skills`, `.agents/skills` u otra carpeta del cliente.
 - `orca status` y `orca repo list`: ¿Orca corre? ¿el repo ya está registrado?
 
 Resumí en pocas líneas qué hay y qué falta.
 
 ## 2. Preguntar
 
-En este orden, de a una sección (saltá las que ya estén resueltas):
+En este orden, de a una sección (saltá las que ya estén resueltas). Usá la forma de preguntar con opciones que tenga tu cliente; si no tiene, numerá las opciones en el texto.
+
+**0. Clientes.** ¿Con qué agentes trabajás? (selección múltiple: Claude Code, Cursor, Codex, Gemini CLI, OpenCode). Define en qué formato se instalan los hooks, el MCP y las skills (`install.sh --agentes ...`).
 
 **A. Suscripciones** (selección múltiple). Recomendado: lo que tenga.
 - Claude: Pro / Max 5x / Max 20x / Team / API
@@ -71,14 +73,16 @@ Si tiene varias cuentas del mismo proveedor: `orca account add --agent claude|co
 - `manual`: cada paso a mano (`lanzar`, `verificar`, `mergear`).
 Push y MR nunca son automáticos.
 
-**E. Checks.** Mostrá los comandos de tests detectados: "¿Son estos?". Si los tests usan base de datos, preguntá cómo se crea una base por worktree.
+**E. Memoria (opcional).** ¿Querés que los agentes recuerden decisiones y contexto entre sesiones con [Engram](https://github.com/Gentleman-Programming/engram)? Recomendado: sí, si trabaja en el mismo repo por semanas. `install.sh --con-engram` baja la última versión estable y corre `engram setup <cliente>` para cada cliente elegido.
+
+**F. Checks.** Mostrá los comandos de tests detectados: "¿Son estos?". Si los tests usan base de datos, preguntá cómo se crea una base por worktree.
 
 ## 3. Setup de mattpocock (tracker, labels, glosario)
 
 Las skills de planificación (`to-tickets`, `to-spec`, `triage`) necesitan saber dónde viven los issues. Ese setup es de mattpocock, y esta skill lo corre como un paso más:
 
-1. Buscá su `SKILL.md`: `.claude/skills/setup-matt-pocock-skills/`, `~/.claude/skills/setup-matt-pocock-skills/` o `~/.agents/skills/setup-matt-pocock-skills/`.
-2. **Leelo y seguí su proceso tal cual** (explorar, secciones A/B/C, borrador, escribir `docs/agents/*.md` y su bloque `## Agent skills`). No lo invoques con la herramienta Skill: es de uso manual y no se puede. Seguirlo a mano es la forma de llamarlo.
+1. Buscá su `SKILL.md` en las carpetas de skills (`~/.agents/skills/`, `~/.claude/skills/`, `.agents/skills/`, `.claude/skills/`, `.cursor/skills/`).
+2. **Leelo y seguí su proceso tal cual** (explorar, secciones A/B/C, borrador, escribir `docs/agents/*.md` y su bloque `## Agent skills`). Está marcado como de uso manual, así que no lo invoques como skill: seguirlo a mano es la forma de llamarlo.
 3. Lo que ya averiguaste en el paso 1 no se vuelve a preguntar (por ejemplo, un remote de GitLab ya define el tracker: proponé GitLab directamente).
 4. Si no está instalado: ofrecé `npx skills add mattpocock/skills -s setup-matt-pocock-skills -s to-tickets -s triage -s to-spec` o el `install.sh` del kit. Si no lo quiere, salteá este paso.
 
@@ -97,7 +101,7 @@ Mostrá todo junto, para editar antes de escribir:
   ```
 - `orca.yaml → scripts.setup`: dependencias, `.env` y la base por worktree. `.worktreeinclude` con el `.env`.
 - `docs/agents/orquestacion.md`: los roles, modelos, reserva, juez y checks elegidos; la tabla "Qué skill usar en cada momento" de `orquestar-slices`, recortada a las skills instaladas en este repo; y cómo arrancar (*"pedile al coordinador en Orca que use `orquestar-slices` con el ticket; para partir trabajo grande, `to-tickets` y después cada ticket es un `./slices nuevo`"*).
-- Una línea más en el bloque `## Agent skills` (el mismo `CLAUDE.md` o `AGENTS.md` que editó el setup de mattpocock; nunca crees el otro):
+- Una línea más en el bloque `## Agent skills` (el mismo `AGENTS.md` o `CLAUDE.md` que editó el setup de mattpocock; nunca crees el otro). `AGENTS.md` es el que leen todos los clientes; si solo existe `CLAUDE.md`, proponé que importe `@AGENTS.md`:
   ```markdown
   ### Orquestación
 
@@ -109,10 +113,10 @@ Mostrá todo junto, para editar antes de escribir:
 Un paso a la vez:
 
 1. **Orca corriendo:** `orca status` → `runtimeReachable: true`.
-2. **Logins:** solo los CLIs del plan. La persona corre `! claude`, `! cursor-agent login`, `! codex login`; vos verificás con una llamada mínima.
+2. **Logins:** solo los CLIs del plan (`claude`, `cursor-agent login`, `codex login`, `gemini`). Los corre la persona; vos verificás con una llamada mínima.
 3. **Cuentas en Orca** (opcional): `orca account add --agent ...` → `orca account list`.
 4. **Repo en Orca:** `orca repo add --path <repo>` → `orca repo list`.
-5. **Kit en el repo:** `<kit>/install.sh --proyecto <repo>`, y después `./slices init`. Escribí los archivos del borrador aprobado.
+5. **Kit:** `<kit>/install.sh --agentes <los de la sección 0> [--con-engram]` para el usuario, y `--proyecto <repo>` si la config va a viajar con el repo. Después `./slices init` y los archivos del borrador aprobado. Si el repo es de un cliente o del equipo y la persona no quiere commitear nada, agregá todo a `.git/info/exclude`.
 6. **Confianza del repo, una vez:** la persona abre el agente en la raíz del repo y acepta "trust this folder". Los worktrees de `.slices/` la heredan. Sin esto, cada worker queda frenado y `worker-start` falla con `agent_readiness: timeout`.
 7. **Jev** (si tiene TypeSafe): la key en `~/.config/kit-orquestacion/jev.key` (permisos 600) o en `JEV_API_KEY`. La pega la persona; no la imprimas.
 8. **Ajustes en la app de Orca:** Settings → Repository → setup "Run automatically"; Settings → Agents → agente por defecto = el coordinador.

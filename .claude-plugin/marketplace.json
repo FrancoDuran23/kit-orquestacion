@@ -1,0 +1,12 @@
+{
+  "name": "kit-orquestacion",
+  "description": "Kit de orquestación de agentes (Orca + slices + Jev)",
+  "owner": { "name": "Franco Duran" },
+  "plugins": [
+    {
+      "name": "kit-orquestacion",
+      "source": "./",
+      "description": "Skills, reglas de hooks, MCP y scripts para orquestar agentes"
+    }
+  ]
+}

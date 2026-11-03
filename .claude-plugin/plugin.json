@@ -1,0 +1,12 @@
+{
+  "name": "kit-orquestacion",
+  "version": "0.3.0",
+  "description": "Orquestar agentes: Orca supervisa, slices verifica con Jev, reglas de gates y tests de a uno, MCP de Playwright. Agnóstico al modelo; este es el adaptador para Claude Code.",
+  "author": { "name": "Franco Duran" },
+  "homepage": "https://github.com/FrancoDuran23/kit-orquestacion",
+  "license": "MIT",
+  "hooks": "./adaptadores/claude-code/hooks.json",
+  "mcpServers": {
+    "playwright": { "command": "npx", "args": ["-y", "@playwright/mcp@latest"] }
+  }
+}

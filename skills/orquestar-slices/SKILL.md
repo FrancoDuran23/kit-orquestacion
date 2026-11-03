@@ -1,6 +1,6 @@
 ---
 name: orquestar-slices
-description: Usar cuando un ticket o pedido es lo bastante grande para repartirlo entre varios agentes, cuando el usuario pide orquestar, partir en slices, armar el DAG, lanzar workers (Grok/Cursor, Codex, Claude, Orca) o verificar lo que devolvieron. Define roles, el SPEC de cada slice, la verificación por recibo y el merge con gate. No usar para tareas chicas: un solo agente bien guiado le gana a cinco mal coordinados.
+description: "Usar cuando un ticket o pedido es lo bastante grande para repartirlo entre varios agentes, cuando el usuario pide orquestar, partir en slices, armar el DAG, lanzar workers (Grok/Cursor, Codex, Claude, Orca) o verificar lo que devolvieron. Define roles, el SPEC de cada slice, la verificación por recibo y el merge con gate. No usar para tareas chicas: un solo agente bien guiado le gana a cinco mal coordinados."
 ---
 
 # Orquestar por slices
@@ -109,7 +109,7 @@ Problemas conocidos con Orca:
 
 Sin Orca (`LANZADOR="local"`): el hijo corre desacoplado (`systemd-run` o `setsid`), `MAX_PARALELO` limita la concurrencia y `verificar` corre solo al terminar.
 
-**El recurso compartido manda.** Código y review se paralelizan; los tests no (una base, poca RAM). El hook `tests-de-a-uno.sh` los pone en fila. Si cada worktree usa su propia base de pruebas, ponela en `orca.yaml → scripts.setup`.
+**El recurso compartido manda.** Código y review se paralelizan; los tests no (una base, poca RAM). La regla `tests-de-a-uno` (en `reglas/`, activa en cada cliente por su adaptador) los pone en fila. Si cada worktree usa su propia base de pruebas, ponela en `orca.yaml → scripts.setup`.
 
 ## 5. No creerle al ejecutor
 
@@ -129,9 +129,9 @@ Si no cerró, el próximo `lanzar` le pasa al worker el motivo, el veredicto del
 
 - `./slices mergear <id>` se niega sin `"cerrado": true`. `--forzar` existe y queda escrito en el commit.
 - Después de integrar todos los slices: `code-review-en-loop` sobre el diff completo y `qa-con-video` si hay UI.
-- El push y el MR los decide la persona (hook `gate-irreversible.sh`).
+- El push y el MR los decide la persona (regla `gate-irreversible`).
 
 ## 7. Higiene
 
-- Revisá `git log --format=%B` de cada commit de un ejecutor: algunos CLIs agregan `Co-authored-by`. El hook git `commit-msg` lo saca solo.
+- Revisá `git log --format=%B` de cada commit de un ejecutor: algunos CLIs agregan `Co-authored-by`. El hook de git `git-hooks/commit-msg` lo saca solo, para cualquier agente.
 - Cada error nuevo se convierte en regla escrita (en un script, en `AGENTS.md` o en un hook). Si se corrige a mano dos veces, se automatiza.

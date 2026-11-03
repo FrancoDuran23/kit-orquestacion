@@ -99,7 +99,7 @@ MODELO=""                    # vacío = el default del agente
 JUEZ="$juez"                 # jev | claude | vacío (solo chequeos)
 MODO="semi"                  # ./slices auto: auto (mergea solo) | semi (frena antes de mergear) | manual
 MAX_PARALELO=3               # hijos a la vez
-PREPARAR=""                  # se corre una vez en cada worktree (ej. "npm ci")
+PREPARAR=""                  # se corre en cada worktree nuevo, con $RAIZ = este repo (ej. "npm ci")
 # Lo que tiene que pasar para que un slice cierre. "nombre::comando".
 CHECKS=(
 $(printf '  %s\n' "${c[@]}")
@@ -277,7 +277,13 @@ cmd_lanzar() {
       else
         git -C "$RAIZ" worktree add -q -b "slice-$id" "$wt" "$BASE"
       fi
-      [[ -n "$PREPARAR" ]] && (cd "$wt" && bash -c "$PREPARAR") >/dev/null 2>&1 || true
+      if [[ -n "$PREPARAR" ]]; then
+        # El log va al lado del worktree (no adentro: `git add -A` lo commitearía).
+        local plog="$WORKTREES/$id.preparar.log"
+        (cd "$wt" && RAIZ="$RAIZ" bash -c "$PREPARAR") > "$plog" 2>&1 \
+          || { git -C "$RAIZ" worktree remove --force "$wt" 2>/dev/null
+               morir "$id: falló PREPARAR (ver $plog). Saqué el worktree para que el próximo intento arranque limpio"; }
+      fi
     fi
     # El SPEC que manda es el de la rama base: si lo corregiste, el hijo lo ve.
     mkdir -p "$wt/$SPECS" "$wt/$RECIBOS/$id"
