@@ -11,17 +11,11 @@ Un modelo planifica, otros ejecutan, un juez verifica y **el código orquesta**.
 
 Si el repo no está configurado (no hay `slices.conf`), primero `configurar-orquestacion`.
 
-**El proceso es proporcional al pedido.** Antes de nada, ubicalo:
-
-| El pedido es… | Qué hacer |
-|---|---|
-| Chico y claro ("arreglá este error", "agregá este campo") | Hacelo directo. Sin grill, sin slices. |
-| Claro pero grande (varias partes, no entra en una sesión) | Saltá el grill: partí directo (paso 2) y mostrá el DAG. |
-| Difuso o con decisiones abiertas ("quiero algo para…") | Grill corto: solo las preguntas que cambian el corte, no todas las posibles. Después, partir. |
+Esta skill es la ruta **orquestar**. Si todavía no se decidió cómo encarar el pedido (solo lectura, directo u orquestar; grill o no), empezá por `start`.
 
 Con cada ticket que sí se orquesta:
 
-1. **Entender.** Leé el ticket (`glab issue view N --comments` / `gh issue view N`). Si hay decisiones abiertas, `grilling` con la persona antes de partir nada. ¿Vale la pena orquestar? (sección 0).
+1. **Entender.** Ya lo hizo `start`: el ticket leído, las decisiones abiertas resueltas (con o sin grill) y un motivo con nombre para orquestar.
 2. **Partir en slices.** Con el plan claro, `to-tickets` para cortarlo en pedazos con dependencias (o a mano con la sección 2). Cada pedazo es un slice: `./slices nuevo <nombre> "<título>"`, y completás su SPEC (alcance de archivos, tests exigidos, **Depende de**).
 3. **Revisar el DAG con la persona.** `./slices dag` muestra las olas (lo que corre en paralelo) y avisa dependencias rotas o ciclos; `./slices dag --mermaid` da el diagrama. Mostráselo y preguntá: "¿Lo lanzamos así?". Es el último momento barato para corregir el corte.
 4. **Commitear los SPECs** (o dejarlos en el exclude si el repo es local) y lanzar: `./slices auto`. Según `MODO`, mergea solo (`auto`) o frena antes de cada merge (`semi`).
@@ -38,6 +32,7 @@ Reconocé el momento y cargá la skill sin esperar a que la nombren. Si no está
 
 | Momento | Señal | Skill |
 |---|---|---|
+| **Al recibir el pedido** | todavía no se eligió la ruta | `start` (solo lectura, directo u orquestar; grill o no) |
 | **Antes de partir** | el pedido es difuso, hay decisiones abiertas | `grilling` (o `grill-with-docs` si aparecen términos del dominio) |
 | | los términos del dominio se confunden o cambian de nombre | `domain-modeling` |
 | | el trabajo no entra en una sesión | `wayfinder` |

@@ -100,7 +100,7 @@ Mostrá todo junto, para editar antes de escribir:
   CHECKS=( "tests::<comando real>" )
   ```
 - `orca.yaml → scripts.setup`: dependencias, `.env` y la base por worktree. `.worktreeinclude` con el `.env`.
-- `docs/agents/orquestacion.md`: los roles, modelos, reserva, juez y checks elegidos; la tabla "Qué skill usar en cada momento" de `orquestar-slices`, recortada a las skills instaladas en este repo; y cómo arrancar (*"pedile al coordinador en Orca que use `orquestar-slices` con el ticket; para partir trabajo grande, `to-tickets` y después cada ticket es un `./slices nuevo`"*).
+- `docs/agents/orquestacion.md`: los roles, modelos, reserva, juez y checks elegidos; la tabla "Qué skill usar en cada momento" de `orquestar-slices`, recortada a las skills instaladas en este repo; y cómo arrancar (*"con cada pedido, `start`: decide la ruta; si es orquestar, sigue `orquestar-slices`"*).
 - Una línea más en el bloque `## Agent skills` (el mismo `AGENTS.md` o `CLAUDE.md` que editó el setup de mattpocock; nunca crees el otro). `AGENTS.md` es el que leen todos los clientes; si solo existe `CLAUDE.md`, proponé que importe `@AGENTS.md`:
   ```markdown
   ### Orquestación
@@ -134,4 +134,4 @@ Si algo falla, se arregla acá, no en el primer ticket real.
 
 ## 7. Listo
 
-Contale a la persona qué quedó configurado, qué skills leen ahora `docs/agents/` y cómo se arranca un ticket. Para cambiar algo después, se editan `docs/agents/*.md` y `slices.conf`; volver a correr esta skill solo hace falta para empezar de cero.
+Contale a la persona qué quedó configurado, qué skills leen ahora `docs/agents/` y cómo se sigue: **con cada pedido, `start`** (decide si es solo lectura, directo u orquestar, y si hace falta grill). Para cambiar algo después, se editan `docs/agents/*.md` y `slices.conf`; volver a correr esta skill solo hace falta para empezar de cero.

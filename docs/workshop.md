@@ -32,6 +32,7 @@ Material: la analogía de la obra y la tabla de roles de [metodo.md](metodo.md).
 ## 4. Llevárselo (15 min)
 
 - Instalar el kit (README) y correr `/configurar-orquestacion` en un repo propio: pregunta qué suscripciones tienen y recomienda quién planifica, quién ejecuta y quién juzga.
+- Con cada pedido, `/start`: explora, decide si hace falta grill y elige la ruta (solo lectura, directo u orquestar). Orquestar necesita un motivo con nombre; la cantidad de archivos no lo es (idea de ODD, de Gentleman Programming).
 - La regla de oro: **el modelo más capaz piensa poco y decide mucho; el que tiene más cuota escribe mucho.**
 - Cierre: lo que se aprende a los golpes (tests de a uno, cada error se vuelve regla, no orquestar lo chico).
 

@@ -50,7 +50,7 @@ Un pedazo chico se verifica fácil; si un agente se equivoca, se rehace un slice
 
 - **No todo se paraleliza.** El código sí; los tests no, si comparten base de datos y RAM. La regla `tests-de-a-uno` los pone en fila.
 - **Cada error se vuelve una regla escrita** (en un script, en `AGENTS.md` o en una regla de hooks). Si algo se corrige a mano dos veces, se automatiza.
-- **Si la tarea es chica, no orquestes.** Un agente bien guiado le gana a cinco mal coordinados.
+- **Si la tarea es chica, no orquestes.** Un agente bien guiado le gana a cinco mal coordinados. Delegá solo con un motivo con nombre (trabajo en paralelo sobre partes que no se tocan, verificación independiente de algo riesgoso, cuota o contexto); la cantidad de archivos no es un motivo. La skill `start` aplica esta regla en cada pedido, en la línea de [ODD](https://github.com/Gentleman-Programming/gentle-ai/blob/main/docs/intended-usage.md).
 
 ## Para probarlo sin nada instalado
 
