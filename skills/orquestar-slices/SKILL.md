@@ -9,7 +9,17 @@ Un modelo planifica, otros ejecutan, un juez verifica y **el código orquesta**.
 
 ## Con un ticket: de punta a punta
 
-Si el repo no está configurado (no hay `slices.conf`), primero `configurar-orquestacion`. Después, con cada ticket:
+Si el repo no está configurado (no hay `slices.conf`), primero `configurar-orquestacion`.
+
+**El proceso es proporcional al pedido.** Antes de nada, ubicalo:
+
+| El pedido es… | Qué hacer |
+|---|---|
+| Chico y claro ("arreglá este error", "agregá este campo") | Hacelo directo. Sin grill, sin slices. |
+| Claro pero grande (varias partes, no entra en una sesión) | Saltá el grill: partí directo (paso 2) y mostrá el DAG. |
+| Difuso o con decisiones abiertas ("quiero algo para…") | Grill corto: solo las preguntas que cambian el corte, no todas las posibles. Después, partir. |
+
+Con cada ticket que sí se orquesta:
 
 1. **Entender.** Leé el ticket (`glab issue view N --comments` / `gh issue view N`). Si hay decisiones abiertas, `grilling` con la persona antes de partir nada. ¿Vale la pena orquestar? (sección 0).
 2. **Partir en slices.** Con el plan claro, `to-tickets` para cortarlo en pedazos con dependencias (o a mano con la sección 2). Cada pedazo es un slice: `./slices nuevo <nombre> "<título>"`, y completás su SPEC (alcance de archivos, tests exigidos, **Depende de**).
