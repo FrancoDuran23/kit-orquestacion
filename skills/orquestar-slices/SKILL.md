@@ -70,6 +70,10 @@ llega worker_done del slice X
   → 3 veces NO CIERRA: parar y contárselo a la persona; el problema está en el SPEC
 ```
 
+Problemas conocidos con Orca:
+- `worker-start` falla con `agent_readiness: timeout`: el agente está frenado en el diálogo de confianza de la carpeta. La persona tiene que aceptar la confianza en la raíz del repo (los worktrees de `.slices/` la heredan). Liberá el worker fallido con el `recovery` que trae `recibos/<id>/orca-start.json`.
+- `worker-release` devuelve `release_unknown` con `closed_agent_terminal`: Orca cerró la terminal pero no pudo confirmar que el proceso terminó. Verificá que no quede el proceso y seguí; nunca cierres terminales a mano en su lugar.
+
 Sin Orca (`LANZADOR="local"`): el hijo corre desacoplado (`systemd-run` o `setsid`), `MAX_PARALELO` limita la concurrencia y `verificar` corre solo al terminar.
 
 **El recurso compartido manda.** Código y review se paralelizan; los tests no (una base, poca RAM). El hook `tests-de-a-uno.sh` los pone en fila. Si cada worktree usa su propia base de pruebas, ponela en `orca.yaml → scripts.setup`.

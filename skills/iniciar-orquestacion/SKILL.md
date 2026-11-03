@@ -72,9 +72,10 @@ Cada paso: qué se hace, el comando, y cómo se verifica.
    CHECKS=( "tests::<comando de tests del repo>" )
    ```
    Mostrale los `CHECKS` detectados y confirmá que son los comandos reales del repo.
-7. **`orca.yaml`.** En `scripts.setup` va lo que necesita cada worktree nuevo: dependencias, `.env` y una base de pruebas propia si los tests usan base de datos. `.worktreeinclude` lleva el `.env`.
-8. **Jev** (si tiene TypeSafe). Guardá la key en `~/.config/kit-orquestacion/jev.key` con permisos 600, o en `JEV_API_KEY`. La pega la persona; vos no la imprimas.
-9. **Ajustes de Orca** (en la app): Settings → Repository → setup "Run automatically"; Settings → Agents → agente por defecto = el coordinador.
+7. **Confianza del repo, una sola vez.** Que la persona abra el agente en la raíz del repo (`claude`, `cursor-agent`) y acepte "trust this folder". Los worktrees de los slices viven en `.slices/`, dentro del repo, y heredan esa confianza. Sin este paso, cada worker se queda frenado en el diálogo y `worker-start` falla con `agent_readiness: timeout`. No lo aceptes vos mandando teclas: es decisión de la persona.
+8. **`orca.yaml`.** En `scripts.setup` va lo que necesita cada worktree nuevo: dependencias, `.env` y una base de pruebas propia si los tests usan base de datos. `.worktreeinclude` lleva el `.env`.
+9. **Jev** (si tiene TypeSafe). Guardá la key en `~/.config/kit-orquestacion/jev.key` con permisos 600, o en `JEV_API_KEY`. La pega la persona; vos no la imprimas.
+10. **Ajustes de Orca** (en la app): Settings → Repository → setup "Run automatically"; Settings → Agents → agente por defecto = el coordinador.
 
 ## Ronda 4: prueba de humo
 

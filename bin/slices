@@ -42,7 +42,9 @@ NOMBRE_REPO="$(basename "$RAIZ")"
 BASE="$(git -C "$RAIZ" symbolic-ref --short HEAD 2>/dev/null || echo main)"  # rama a la que se mergea
 SPECS="specs"                                    # dónde viven los SPEC
 RECIBOS="recibos"                                # dónde queda la evidencia
-WORKTREES="$(dirname "$RAIZ")/$NOMBRE_REPO-slices"   # una carpeta por slice, afuera del repo
+WORKTREES="$RAIZ/.slices"                        # una carpeta por slice, adentro del repo e ignorada:
+                                                 # así heredan la confianza de la carpeta (Claude Code,
+                                                 # Cursor) y el agente no se frena preguntando en cada slice
 EJECUTOR="cursor"                                # cursor | claude | codex
 MODELO=""                                        # vacío = el default del CLI
 LANZADOR="local"                                 # local: el hijo corre acá · orca: worker supervisado de Orca
@@ -122,6 +124,7 @@ EOF
   [[ -f "$RAIZ/CLAUDE.md" ]] || { echo "@AGENTS.md" > "$RAIZ/CLAUDE.md"; echo "creado CLAUDE.md"; }
   grep -qxF "$RECIBOS/*/pid" "$RAIZ/.gitignore" 2>/dev/null || echo "$RECIBOS/*/pid" >> "$RAIZ/.gitignore"
   grep -qxF "$RECIBOS/.orca-run" "$RAIZ/.gitignore" 2>/dev/null || echo "$RECIBOS/.orca-run" >> "$RAIZ/.gitignore"
+  grep -qxF ".slices/" "$RAIZ/.gitignore" 2>/dev/null || echo ".slices/" >> "$RAIZ/.gitignore"
   echo "listo. Siguiente: ./slices nuevo <nombre> \"<título>\""
 }
 
@@ -315,8 +318,11 @@ cmd_verificar() {
   done
   # Lo que cambió contra la base, sin contar la evidencia.
   git -C "$wt" add -A >/dev/null 2>&1
-  local tocados; tocados=$(git -C "$wt" diff --cached --name-only "$BASE" -- . ":!$RECIBOS" | wc -l)
-  git -C "$wt" diff --cached --stat "$BASE" -- . ":!$RECIBOS" > "$out/diff.stat"
+  # Contra el punto donde nació la rama, no contra la base de hoy: si la base
+  # avanzó, sus cambios aparecerían como "tocados" por el slice.
+  local desde; desde=$(git -C "$wt" merge-base "$BASE" HEAD)
+  local tocados; tocados=$(git -C "$wt" diff --cached --name-only "$desde" -- . ":!$RECIBOS" | wc -l)
+  git -C "$wt" diff --cached --stat "$desde" -- . ":!$RECIBOS" > "$out/diff.stat"
   # "Verde" sin trabajo hecho es un falso positivo: el repo ya pasaba antes.
   local cerrado=$todo_ok motivo=""
   (( tocados > 0 )) || { cerrado=false; motivo="no tocó ningún archivo"; }
@@ -325,7 +331,7 @@ cmd_verificar() {
   local veredicto="sin juez"
   if $cerrado && [[ "$JUEZ" == "jev" ]]; then
     [[ -n "$JUEZ_JEV" ]] || morir "JUEZ=jev pero no encuentro juez-jev (va al lado de slices o en el PATH)"
-    veredicto=$("$JUEZ_JEV" "$(spec_de "$id")" "$wt" "$BASE" 2>&1) || true
+    veredicto=$("$JUEZ_JEV" "$(spec_de "$id")" "$wt" "$desde" 2>&1) || true
     echo "$veredicto" > "$out/juez.txt"
     # Un juez que no contesta no es un chequeo que pasó.
     [[ "$(head -1 <<<"$veredicto")" == CIERRA ]] || { cerrado=false; motivo="${motivo:+$motivo; }Jev no cierra (ver juez.txt)"; }
@@ -337,7 +343,7 @@ SPEC:
 $(cat "$(spec_de "$id")")
 
 DIFF:
-$(git -C "$wt" diff --cached "$BASE" -- . ":!$RECIBOS" | head -c 120000)" --model "$MODELO_JUEZ" 2>/dev/null) || echo "NO RESPONDIÓ")
+$(git -C "$wt" diff --cached "$desde" -- . ":!$RECIBOS" | head -c 120000)" --model "$MODELO_JUEZ" 2>/dev/null) || echo "NO RESPONDIÓ")
     echo "$veredicto" > "$out/juez.txt"
     # Un juez que no contesta no es un chequeo que pasó.
     [[ "$(head -1 <<<"$veredicto")" == CIERRA* ]] || { cerrado=false; motivo="${motivo:+$motivo; }el juez no cierra (ver juez.txt)"; }
@@ -367,7 +373,8 @@ cmd_estado() {
   for f in "$RAIZ/$SPECS"/*.spec.md; do
     [[ -e "$f" ]] || continue
     local id; id="$(basename "$f" .spec.md)"; local wt; wt="$(wt_de "$id")"; local r="$wt/$RECIBOS/$id/recibo.json" e
-    if git -C "$RAIZ" log --oneline "$BASE" 2>/dev/null | grep -q "merge slice $id"; then e="mergeado"
+    # Sin `| grep -q`: con pipefail, grep corta antes y git log muere por SIGPIPE.
+    if [[ -n "$(git -C "$RAIZ" log -1 --format=%h -F --grep="merge slice $id " "$BASE" 2>/dev/null)" ]]; then e="mergeado"
     elif corriendo "$id"; then e="corriendo"
     elif [[ -f "$r" ]] && grep -q '"cerrado": true' "$r"; then e="cerró — falta mergear"
     elif [[ -f "$r" ]]; then e="NO cerró: $(grep -oP '"motivo": "\K[^"]*' "$r")"
