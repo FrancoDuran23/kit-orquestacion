@@ -7,6 +7,17 @@ description: "Usar cuando un ticket o pedido es lo bastante grande para repartir
 
 Un modelo planifica, otros ejecutan, un juez verifica y **el código orquesta**. Nadie aprueba su propio trabajo. El estado vive en archivos y en git, no en la memoria de un modelo.
 
+## Con un ticket: de punta a punta
+
+Si el repo no está configurado (no hay `slices.conf`), primero `configurar-orquestacion`. Después, con cada ticket:
+
+1. **Entender.** Leé el ticket (`glab issue view N --comments` / `gh issue view N`). Si hay decisiones abiertas, `grilling` con la persona antes de partir nada. ¿Vale la pena orquestar? (sección 0).
+2. **Partir en slices.** Con el plan claro, `to-tickets` para cortarlo en pedazos con dependencias (o a mano con la sección 2). Cada pedazo es un slice: `./slices nuevo <nombre> "<título>"`, y completás su SPEC (alcance de archivos, tests exigidos, **Depende de**).
+3. **Revisar el DAG con la persona.** `./slices dag` muestra las olas (lo que corre en paralelo) y avisa dependencias rotas o ciclos; `./slices dag --mermaid` da el diagrama. Mostráselo y preguntá: "¿Lo lanzamos así?". Es el último momento barato para corregir el corte.
+4. **Commitear los SPECs** (o dejarlos en el exclude si el repo es local) y lanzar: `./slices auto`. Según `MODO`, mergea solo (`auto`) o frena antes de cada merge (`semi`).
+5. **Atender lo que frena.** Preguntas de un worker (contestá con `orca orchestration reply`), conflictos de merge, slices escalados (arreglá el SPEC y `./slices lanzar <id>`). Después, `./slices auto` otra vez retoma.
+6. **Cerrar.** Con todo mergeado en la rama del ticket: `code-review-en-loop`, `qa-con-video` si hay UI, `pr` para el cuerpo del MR. El push y el MR los hace la persona.
+
 ## 0. ¿Vale la pena?
 
 Partí solo si hay **al menos dos pedazos independientes** o si el trabajo no entra en una sesión. Si es un fix de una función, hacelo directo. Para decidir el reparto en casos dudosos, cargá `kero-orchestrate`.
@@ -75,7 +86,7 @@ Commiteá el SPEC: así el número queda tomado y el hijo ve la versión de la r
 
 ## 4. Lanzar: Orca supervisa, slices verifica
 
-Si el repo todavía no está configurado, cargá antes `iniciar-orquestacion`.
+Si el repo todavía no está configurado, cargá antes `configurar-orquestacion`.
 
 Con `LANZADOR="orca"` en `slices.conf` (el default si Orca está instalado):
 

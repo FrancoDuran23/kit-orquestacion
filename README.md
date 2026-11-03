@@ -22,12 +22,15 @@ Requisitos: `git`, `jq` y `node`/`npx`. Opcionales: `orca`, y una key de [TypeSa
 /plugin install kit-orquestacion --marketplace FrancoDuran23/kit-orquestacion
 ```
 
-Después, en tu repo: usá la skill **`iniciar-orquestacion`** (en Claude Code: `/iniciar-orquestacion`). Mira el repo, te pregunta qué suscripciones y agentes tenés, recomienda quién planifica, quién ejecuta y quién juzga, y deja todo andando con un slice de prueba.
+**Una vez por repo:** la skill **`configurar-orquestacion`** (en Claude Code: `/configurar-orquestacion`). Mira el repo, te pregunta qué suscripciones y agentes tenés, recomienda quién planifica, quién ejecuta y quién juzga, y deja todo andando con un slice de prueba.
+
+**Con cada ticket:** pedile al agente que lo orqueste; la skill `orquestar-slices` lo guía: entender (y `grilling` si hay dudas) → partir con `to-tickets` → `./slices dag` para revisar el grafo con vos → `./slices auto` → review, QA y MR.
 
 ## Cómo funciona
 
 ```text
 ticket → partir en slices (SPEC + tests exigidos + dependencias)
+./slices dag      ver las olas (qué corre en paralelo) y corregir antes de lanzar
 ./slices auto
   lanza cada slice como worker de Orca, en su worktree, cuando sus dependencias ya entraron
   worker_done → re-corre los tests por fuera + Jev compara los tests contra el SPEC
@@ -44,7 +47,7 @@ review en loop → QA → push y MR (siempre una persona)
 
 | Pieza | Dónde | Qué es |
 |---|---|---|
-| Skills | [`skills/`](skills) | `iniciar-orquestacion`, `orquestar-slices` (con el mapa de qué skill usar en cada momento), `code-review-en-loop`, `qa-con-video`. Estándar Agent Skills. |
+| Skills | [`skills/`](skills) | `configurar-orquestacion`, `orquestar-slices` (con el mapa de qué skill usar en cada momento), `code-review-en-loop`, `qa-con-video`. Estándar Agent Skills. |
 | Skills de terceros | [`skills-lock.json`](skills-lock.json) | [mattpocock](https://github.com/mattpocock/skills), [kero-stack](https://github.com/uxKero/kero-stack), [impeccable](https://github.com/pbakaus/impeccable), [vgpu](https://github.com/vercel-labs/vgpu) y [Orca](https://github.com/stablyai/orca). Se bajan de su repo original, no se copian. |
 | Reglas | [`reglas/`](reglas) | Gates en lo irreversible (push, merge remoto, borrar datos, publicar), sin atribución de IA en commits, tests de a uno. Una sola lógica para todos los clientes. |
 | Adaptadores | [`adaptadores/`](adaptadores) | Traducen las reglas al formato de hooks de cada cliente. |

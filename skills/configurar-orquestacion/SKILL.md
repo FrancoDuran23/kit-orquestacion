@@ -1,10 +1,10 @@
 ---
-name: iniciar-orquestacion
+name: configurar-orquestacion
 description: "Configura un repo para orquestar agentes de punta a punta: mira el repo, pregunta qué suscripciones tiene la persona y para qué quiere cada una, recomienda quién planifica, quién ejecuta y quién juzga, corre el setup de las skills de mattpocock (tracker, labels, glosario) y deja Orca, el kit, slices y Jev funcionando con un slice de prueba. Correr una vez por repo."
 disable-model-invocation: true
 ---
 
-# Iniciar orquestación
+# Configurar orquestación
 
 Configurar Orca a mano es engorroso. Esta skill lo hace conversando: **mira, pregunta, recomienda, muestra el borrador, escribe y verifica.**
 

@@ -296,7 +296,7 @@ if [[ -n "$PROYECTO" ]]; then
 EOF
 else
   cat <<EOF
-  · Para configurar un repo de punta a punta: abrí tu agente ahí y usá la skill iniciar-orquestacion.
+  · Para configurar un repo de punta a punta: abrí tu agente ahí y usá la skill configurar-orquestacion.
   · Reiniciá los agentes para que tomen hooks, MCP y skills nuevos.
 EOF
 fi

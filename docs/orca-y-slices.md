@@ -32,6 +32,20 @@ En una frase, para el workshop:
 
 > Orca es el capataz que reparte y vigila. Lo que no hace es inspeccionar la obra: si el obrero dice "terminé", le cree. Sumamos un inspector (slices + Jev) que vuelve a medir antes de aceptar. Para eso el inspector prepara él mismo el terreno: por eso el setup está en slices y no en `orca.yaml`.
 
+## Antes de lanzar: el DAG
+
+`./slices dag` agrupa los slices en olas: todo lo de una ola corre en paralelo, y cada ola espera a la anterior. Avisa si un slice depende de uno que no existe o si hay un ciclo. `./slices dag --mermaid` da el mismo grafo para pegar en un MR o en una diapositiva.
+
+```text
+Ola 1 (en paralelo):
+  001-modelo       ← nada
+Ola 2 (en paralelo):
+  002-clasificar   ← 001-modelo
+  003-pantalla     ← 001-modelo
+Ola 3 (en paralelo):
+  004-reporte      ← 002-clasificar
+```
+
 ## El loop
 
 ```text

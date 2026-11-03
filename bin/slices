@@ -10,6 +10,7 @@
 #   ./slices estado                    # quién corre, quién terminó, quién cerró
 #   ./slices verificar 001-login       # corre los chequeos por fuera y deja el recibo
 #   ./slices mergear 001-login         # entra a la rama base solo si el recibo cerró
+#   ./slices dag [--mermaid]           # el grafo: dependencias, olas que corren en paralelo y estado
 #   ./slices auto [<id>…]              # el loop entero solo: lanza por dependencias, verifica,
 #                                      # relanza con el motivo y mergea (según MODO)
 #
@@ -465,6 +466,55 @@ procesar_orca() {
   [[ -z "$delivery" ]] || orca orchestration check --run "$run" --ack "$delivery" --json >/dev/null 2>&1 || true
 }
 
+# El DAG: cada slice con sus dependencias, agrupado en olas (todo lo de una ola
+# puede correr en paralelo). Avisa dependencias que no existen y ciclos.
+cmd_dag() {
+  local mermaid="${1:-}" id d ids=() falta=0
+  mapfile -t ids < <(ids_de_specs)
+  (( ${#ids[@]} )) || morir "no hay SPECs en $SPECS"
+  declare -A ola=() deps=()
+  for id in "${ids[@]}"; do
+    deps[$id]="$(deps_de "$id" | tr '\n' ' ')"
+    for d in ${deps[$id]}; do [[ "$d" == *-desconocido ]] && { echo "⚠ $id depende de ${d%-desconocido}, que no existe"; falta=1; }; done
+  done
+  # Olas: un slice va en la ola siguiente a la más alta de sus dependencias.
+  local cambio=1 n max
+  while (( cambio )); do
+    cambio=0
+    for id in "${ids[@]}"; do
+      [[ -n "${ola[$id]:-}" ]] && continue
+      max=0
+      for d in ${deps[$id]}; do
+        [[ "$d" == *-desconocido ]] && continue
+        [[ -n "${ola[$d]:-}" ]] || { max=-1; break; }
+        (( ola[$d] > max )) && max=${ola[$d]}
+      done
+      (( max >= 0 )) && { ola[$id]=$((max + 1)); cambio=1; }
+    done
+  done
+  for id in "${ids[@]}"; do [[ -n "${ola[$id]:-}" ]] || { echo "⚠ $id está en un ciclo de dependencias"; falta=1; }; done
+
+  if [[ "$mermaid" == --mermaid ]]; then
+    echo "graph LR"
+    for id in "${ids[@]}"; do
+      echo "  s${id%%-*}[\"$id<br/>$(estado_de "$id")\"]"
+      for d in ${deps[$id]}; do [[ "$d" == *-desconocido ]] || echo "  s${d%%-*} --> s${id%%-*}"; done
+    done
+    return $falta
+  fi
+
+  local o maxola=0
+  for id in "${ids[@]}"; do (( ${ola[$id]:-0} > maxola )) && maxola=${ola[$id]}; done
+  for (( o=1; o<=maxola; o++ )); do
+    echo "Ola $o (en paralelo):"
+    for id in "${ids[@]}"; do
+      [[ "${ola[$id]:-}" == "$o" ]] || continue
+      printf '  %-30s ← %-24s %s\n' "$id" "$( [[ -n "${deps[$id]// /}" ]] && echo "${deps[$id]}" || echo "nada")" "$(estado_de "$id")"
+    done
+  done
+  return $falta
+}
+
 cmd_auto() {
   [[ "$MODO" == manual ]] && morir "MODO=manual en slices.conf: usá lanzar / verificar / mergear a mano (o SLICES_MODO=auto)"
   local ids=("$@"); (( ${#ids[@]} )) || mapfile -t ids < <(ids_de_specs)
@@ -554,6 +604,7 @@ case "${1:-ayuda}" in
   verificar) shift; cmd_verificar "$@" ;;
   mergear)   shift; cmd_mergear "$@" ;;
   auto)      shift; cmd_auto "$@" ;;
+  dag)       shift; cmd_dag "$@" ;;
   _trabajar) shift; cmd__trabajar "$@" ;;
-  *) sed -n '2,26p' "$YO" | sed 's/^# \{0,1\}//' ;;
+  *) sed -n '2,27p' "$YO" | sed 's/^# \{0,1\}//' ;;
 esac

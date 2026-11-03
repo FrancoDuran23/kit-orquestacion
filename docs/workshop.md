@@ -15,6 +15,7 @@ Material: la analogía de la obra y la tabla de roles de [metodo.md](metodo.md).
 - Qué es un slice: la pizza y las porciones.
 - Demo en vivo: un ticket real partido en 3 o 4 slices, con la tabla de dependencias (el DAG).
 - Mostrar un SPEC: alcance de archivos, tests exigidos, fuera de alcance.
+- `./slices dag`: las olas en pantalla. Preguntar al público qué slice movería de ola y por qué.
 - Mensaje: un pedazo chico se verifica fácil; uno grande, no.
 
 ## 3. Orquestar con Orca (20 min)
@@ -30,7 +31,7 @@ Material: la analogía de la obra y la tabla de roles de [metodo.md](metodo.md).
 
 ## 4. Llevárselo (15 min)
 
-- Instalar el kit (README) y correr `/iniciar-orquestacion` en un repo propio: pregunta qué suscripciones tienen y recomienda quién planifica, quién ejecuta y quién juzga.
+- Instalar el kit (README) y correr `/configurar-orquestacion` en un repo propio: pregunta qué suscripciones tienen y recomienda quién planifica, quién ejecuta y quién juzga.
 - La regla de oro: **el modelo más capaz piensa poco y decide mucho; el que tiene más cuota escribe mucho.**
 - Cierre: lo que se aprende a los golpes (tests de a uno, cada error se vuelve regla, no orquestar lo chico).
 
